@@ -1,0 +1,184 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Breath Logger (Web Serial)</title>
+  <style>
+    body { font-family: system-ui; padding: 16px; }
+    button { margin-right: 8px; padding: 10px 14px; }
+    #status { margin: 10px 0; }
+    canvas { max-width: 100%; }
+  </style>
+</head>
+<body>
+  <h2>Breath Logger</h2>
+  <div id="status">Status: disconnected</div>
+  <button id="connect">Connect</button>
+  <button id="start" disabled>Start</button>
+  <button id="stop" disabled>Stop</button>
+  <button id="save" disabled>Save CSV</button>
+  <button id="clear" disabled>Clear</button>
+
+  <canvas id="chart" height="120"></canvas>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    let port, reader, writer;
+    let running = false;
+    let rows = []; // [ms, dp, fsr]
+
+    const statusEl = document.getElementById('status');
+    const btnConnect = document.getElementById('connect');
+    const btnStart = document.getElementById('start');
+    const btnStop = document.getElementById('stop');
+    const btnSave = document.getElementById('save');
+    const btnClear = document.getElementById('clear');
+
+    const ctx = document.getElementById('chart').getContext('2d');
+
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'DP_Pa', data: [], borderColor: '#1f77b4', tension: 0.35, pointRadius: 0 },
+          { label: 'FSR_raw', data: [], borderColor: '#ff7f0e', tension: 0.35, pointRadius: 0, yAxisID: 'y2' }
+        ]
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        scales: {
+          y: { title: { display: true, text: 'DP (Pa)' } },
+          y2: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'FSR' } }
+        }
+      }
+    });
+
+    function setUI(connected) {
+      btnStart.disabled = !connected;
+      btnStop.disabled = !connected;
+      btnSave.disabled = !connected;
+      btnClear.disabled = !connected;
+    }
+
+    async function sendLine(s) {
+      const enc = new TextEncoder();
+      await writer.write(enc.encode(s + "\n"));
+    }
+
+    function addPoint(ms, dp, fsr) {
+      // 최근 20초만 표시
+      const t0 = rows.length ? rows[0][0] : ms;
+      const t = (ms - t0) / 1000.0;
+
+      rows.push([ms, dp, fsr]);
+
+      chart.data.labels.push(t.toFixed(2));
+      chart.data.datasets[0].data.push(dp);
+      chart.data.datasets[1].data.push(fsr);
+
+      // points 너무 많으면 잘라서 브라우저 렉 방지
+      const MAX = 2000;
+      if (chart.data.labels.length > MAX) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+        chart.data.datasets[1].data.shift();
+      }
+      chart.update();
+    }
+
+    async function readLoop() {
+      const dec = new TextDecoder();
+      let buf = "";
+      while (port && port.readable) {
+        try {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, idx).trim();
+            buf = buf.slice(idx + 1);
+            if (!line) continue;
+            if (line.startsWith("ms,")) continue;
+
+            const parts = line.split(",");
+            if (parts.length === 3) {
+              const ms = parseInt(parts[0], 10);
+              const dp = parseFloat(parts[1]);
+              const fsr = parseInt(parts[2], 10);
+              if (!Number.isNaN(ms) && !Number.isNaN(dp) && !Number.isNaN(fsr)) {
+                addPoint(ms, dp, fsr);
+              }
+            }
+          }
+        } catch (e) {
+          console.error(e);
+          break;
+        }
+      }
+    }
+
+    btnConnect.onclick = async () => {
+      if (!("serial" in navigator)) {
+        alert("Web Serial not supported. Use Chrome/Edge.");
+        return;
+      }
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+
+      writer = port.writable.getWriter();
+      reader = port.readable.getReader();
+
+      statusEl.textContent = "Status: connected";
+      setUI(true);
+
+      // Arduino가 mode csv / start/stop을 지원한다는 가정
+      await sendLine("mode csv");
+      await sendLine("start");
+
+      readLoop();
+    };
+
+    btnStart.onclick = async () => {
+      // start 누르면 자동 clear
+      rows = [];
+      chart.data.labels = [];
+      chart.data.datasets[0].data = [];
+      chart.data.datasets[1].data = [];
+      chart.update();
+
+      await sendLine("start");
+      running = true;
+    };
+
+    btnStop.onclick = async () => {
+      await sendLine("stop");
+      running = false;
+    };
+
+    btnClear.onclick = async () => {
+      rows = [];
+      chart.data.labels = [];
+      chart.data.datasets[0].data = [];
+      chart.data.datasets[1].data = [];
+      chart.update();
+    };
+
+    btnSave.onclick = () => {
+      if (!rows.length) return;
+      let csv = "ms,dp_pa,fsr_raw\n";
+      csv += rows.map(r => `${r[0]},${r[1]},${r[2]}`).join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `breath_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+  </script>
+</body>
+</html>
