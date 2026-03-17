@@ -1,64 +1,305 @@
 <!doctype html>
-<html>
+<html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>Breath Logger (Web Serial)</title>
+  <title>Breath & Swallow Logger (Web Serial)</title>
   <style>
-    body { font-family: system-ui; padding: 16px; }
+    body { font-family: system-ui, sans-serif; padding: 16px; line-height: 1.4; }
+    h2, h3 { margin: 0 0 8px 0; }
+    .toolbar { margin-bottom: 12px; }
     button { margin-right: 8px; padding: 10px 14px; }
-    #status { margin: 10px 0; }
+    #status { margin: 10px 0; font-weight: 600; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 12px;
+      background: #fff;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(180px, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .metric {
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 10px;
+      background: #fafafa;
+    }
+    .metric .k { font-size: 12px; color: #666; }
+    .metric .v { font-size: 18px; font-weight: 700; margin-top: 4px; }
     canvas { max-width: 100%; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border-bottom: 1px solid #eee;
+      padding: 8px 6px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #fafafa; position: sticky; top: 0; }
+    .small { font-size: 12px; color: #666; }
+    .scroll {
+      max-height: 420px;
+      overflow: auto;
+      border: 1px solid #eee;
+      border-radius: 8px;
+    }
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 8px 0 0 0;
+    }
+    label { font-size: 13px; }
+    input[type="number"] { width: 80px; }
+    .legend-note { font-size: 12px; color: #666; margin-top: 6px; }
   </style>
 </head>
 <body>
-  <h2>Breath Logger</h2>
+  <h2>Breath & Swallow Logger</h2>
   <div id="status">Status: disconnected</div>
-  <button id="connect">Connect</button>
-  <button id="start" disabled>Start</button>
-  <button id="stop" disabled>Stop</button>
-  <button id="save" disabled>Save CSV</button>
-  <button id="clear" disabled>Clear</button>
 
-  <canvas id="chart" height="120"></canvas>
+  <div class="toolbar">
+    <button id="connect">Connect</button>
+    <button id="start" disabled>Start</button>
+    <button id="stop" disabled>Stop</button>
+    <button id="save" disabled>Save CSV</button>
+    <button id="saveEvents" disabled>Save Events CSV</button>
+    <button id="clear" disabled>Clear</button>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h3>Analysis Parameters</h3>
+    <div class="row">
+      <label>FSR baseline window (pts)
+        <input id="fsrBaseWindow" type="number" value="120" min="20" step="10">
+      </label>
+      <label>FSR threshold SD
+        <input id="fsrSdK" type="number" value="3" min="1" step="0.5">
+      </label>
+      <label>FSR sustain points
+        <input id="fsrSustain" type="number" value="2" min="1" step="1">
+      </label>
+      <label>DP smoothing window
+        <input id="dpSmoothWindow" type="number" value="7" min="3" step="2">
+      </label>
+      <label>DP slope deadband
+        <input id="dpSlopeDeadband" type="number" value="1.5" min="0.1" step="0.1">
+      </label>
+      <label>Stable phase window (ms)
+        <input id="stablePhaseMs" type="number" value="300" min="100" step="50">
+      </label>
+    </div>
+    <div class="legend-note">
+      FSR onset = baseline mean + k·SD 초과 + 연속 N포인트 유지. Swallow event 구간에서는 dp_pa를 apnea로 처리.
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Signals</h3>
+      <canvas id="chart" height="140"></canvas>
+      <div class="legend-note">
+        파란색: dp_pa / 주황색: FSR_raw / 이벤트 동안 회색 음영 표시
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Live Summary</h3>
+      <div class="metrics">
+        <div class="metric">
+          <div class="k">Swallow count</div>
+          <div class="v" id="mSwallowCount">0</div>
+        </div>
+        <div class="metric">
+          <div class="k">Current phase</div>
+          <div class="v" id="mCurrentPhase">-</div>
+        </div>
+        <div class="metric">
+          <div class="k">FSR threshold</div>
+          <div class="v" id="mFsrThreshold">-</div>
+        </div>
+        <div class="metric">
+          <div class="k">Mean cycle duration</div>
+          <div class="v" id="mCycleMean">-</div>
+        </div>
+      </div>
+      <div class="small" id="liveExplain">
+        연결 후 Start를 누르면 실시간으로 swallow event와 respiration phase를 분석합니다.
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3>Detected Swallow Events</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Onset (ms)</th>
+            <th>End (ms)</th>
+            <th>Duration (ms)</th>
+            <th>Pre</th>
+            <th>Post</th>
+            <th>Pattern</th>
+            <th>At onset</th>
+            <th>Exp start → onset (ms)</th>
+            <th>Exp phase stage</th>
+          </tr>
+        </thead>
+        <tbody id="eventTableBody"></tbody>
+      </table>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     let port, reader, writer;
     let running = false;
-    let rows = []; // [ms, dp, fsr]
+
+    // raw rows: {ms, dp, fsr}
+    let rows = [];
+
+    // phase samples: {ms, phase}  phase ∈ 'I','E','A'
+    let phaseTimeline = [];
+
+    // breath segments: {phase:'I'|'E', startMs, endMs}
+    let stableSegments = [];
+
+    // swallow events
+    let swallowEvents = [];
+
+    // current swallow tracking
+    let activeSwallow = null;
+    let fsrAboveCount = 0;
+    let fsrBelowCount = 0;
+
+    // chart annotation helpers
+    const swallowShadesPlugin = {
+      id: 'swallowShadesPlugin',
+      beforeDraw(chart, args, opts) {
+        const { ctx, chartArea, scales } = chart;
+        if (!chartArea || !scales.x || !rows.length) return;
+        const xScale = scales.x;
+        const labels = chart.data.labels;
+        if (!labels.length) return;
+
+        const visibleT = labels.map(v => parseFloat(v));
+        const minT = visibleT[0];
+        const maxT = visibleT[visibleT.length - 1];
+
+        ctx.save();
+        swallowEvents.forEach(ev => {
+          const t0 = (ev.onsetMs - rows[0].ms) / 1000;
+          const t1 = (ev.endMs - rows[0].ms) / 1000;
+          if (t1 < minT || t0 > maxT) return;
+
+          const x0 = xScale.getPixelForValue(t0.toFixed(2));
+          const x1 = xScale.getPixelForValue(t1.toFixed(2));
+          ctx.fillStyle = 'rgba(120,120,120,0.12)';
+          ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
+        });
+
+        if (activeSwallow && activeSwallow.onsetMs != null) {
+          const t0 = (activeSwallow.onsetMs - rows[0].ms) / 1000;
+          if (t0 >= minT && t0 <= maxT) {
+            const x0 = xScale.getPixelForValue(t0.toFixed(2));
+            const x1 = chartArea.right;
+            ctx.fillStyle = 'rgba(120,120,120,0.08)';
+            ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
+          }
+        }
+        ctx.restore();
+      }
+    };
 
     const statusEl = document.getElementById('status');
     const btnConnect = document.getElementById('connect');
     const btnStart = document.getElementById('start');
     const btnStop = document.getElementById('stop');
     const btnSave = document.getElementById('save');
+    const btnSaveEvents = document.getElementById('saveEvents');
     const btnClear = document.getElementById('clear');
 
-    const ctx = document.getElementById('chart').getContext('2d');
+    const mSwallowCount = document.getElementById('mSwallowCount');
+    const mCurrentPhase = document.getElementById('mCurrentPhase');
+    const mFsrThreshold = document.getElementById('mFsrThreshold');
+    const mCycleMean = document.getElementById('mCycleMean');
+    const liveExplain = document.getElementById('liveExplain');
+    const eventTableBody = document.getElementById('eventTableBody');
 
+    function getParams() {
+      return {
+        fsrBaseWindow: parseInt(document.getElementById('fsrBaseWindow').value, 10),
+        fsrSdK: parseFloat(document.getElementById('fsrSdK').value),
+        fsrSustain: parseInt(document.getElementById('fsrSustain').value, 10),
+        dpSmoothWindow: parseInt(document.getElementById('dpSmoothWindow').value, 10),
+        dpSlopeDeadband: parseFloat(document.getElementById('dpSlopeDeadband').value),
+        stablePhaseMs: parseInt(document.getElementById('stablePhaseMs').value, 10)
+      };
+    }
+
+    const ctx = document.getElementById('chart').getContext('2d');
     const chart = new Chart(ctx, {
       type: 'line',
       data: {
         labels: [],
         datasets: [
-          { label: 'DP_Pa', data: [], borderColor: '#1f77b4', tension: 0.35, pointRadius: 0 },
-          { label: 'FSR_raw', data: [], borderColor: '#ff7f0e', tension: 0.35, pointRadius: 0, yAxisID: 'y2' }
+          {
+            label: 'DP_Pa',
+            data: [],
+            borderColor: '#1f77b4',
+            tension: 0.25,
+            pointRadius: 0,
+            yAxisID: 'y'
+          },
+          {
+            label: 'FSR_raw',
+            data: [],
+            borderColor: '#ff7f0e',
+            tension: 0.25,
+            pointRadius: 0,
+            yAxisID: 'y2'
+          }
         ]
       },
       options: {
         animation: false,
         responsive: true,
+        interaction: { mode: 'nearest', intersect: false },
         scales: {
+          x: { title: { display: true, text: 'Time (s)' } },
           y: { title: { display: true, text: 'DP (Pa)' } },
-          y2: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'FSR' } }
+          y2: {
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'FSR' }
+          }
+        },
+        plugins: {
+          legend: { display: true }
         }
-      }
+      },
+      plugins: [swallowShadesPlugin]
     });
 
     function setUI(connected) {
       btnStart.disabled = !connected;
       btnStop.disabled = !connected;
       btnSave.disabled = !connected;
+      btnSaveEvents.disabled = !connected;
       btnClear.disabled = !connected;
     }
 
@@ -67,39 +308,312 @@
       await writer.write(enc.encode(s + "\n"));
     }
 
+    function mean(arr) {
+      if (!arr.length) return 0;
+      return arr.reduce((a, b) => a + b, 0) / arr.length;
+    }
+
+    function std(arr) {
+      if (arr.length < 2) return 0;
+      const m = mean(arr);
+      const v = arr.reduce((s, x) => s + (x - m) ** 2, 0) / arr.length;
+      return Math.sqrt(v);
+    }
+
+    function movingAverage(data, windowSize) {
+      if (!data.length) return [];
+      const out = new Array(data.length);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        sum += data[i];
+        if (i >= windowSize) sum -= data[i - windowSize];
+        out[i] = sum / Math.min(i + 1, windowSize);
+      }
+      return out;
+    }
+
+    function getFsrThreshold() {
+      const { fsrBaseWindow, fsrSdK } = getParams();
+      const usable = rows
+        .filter((r, idx) => !isInsideSwallow(r.ms))
+        .slice(-fsrBaseWindow)
+        .map(r => r.fsr);
+
+      if (usable.length < Math.max(10, fsrBaseWindow / 4)) {
+        const fallback = rows.slice(-fsrBaseWindow).map(r => r.fsr);
+        if (!fallback.length) return { baseMean: 0, baseSd: 0, threshold: Infinity };
+        const m = mean(fallback);
+        const s = std(fallback);
+        return { baseMean: m, baseSd: s, threshold: m + fsrSdK * s };
+      }
+
+      const m = mean(usable);
+      const s = std(usable);
+      return { baseMean: m, baseSd: s, threshold: m + fsrSdK * s };
+    }
+
+    function isInsideSwallow(ms) {
+      if (activeSwallow && activeSwallow.onsetMs != null && ms >= activeSwallow.onsetMs) return true;
+      return swallowEvents.some(ev => ms >= ev.onsetMs && ms <= ev.endMs);
+    }
+
+    function getCurrentDPSlope() {
+      const { dpSmoothWindow } = getParams();
+      if (rows.length < 3) return 0;
+
+      const dp = rows.map(r => r.dp);
+      const sm = movingAverage(dp, dpSmoothWindow);
+
+      const n = sm.length;
+      if (n < 3) return 0;
+
+      // 단순 최근 2점 차분
+      return sm[n - 1] - sm[n - 2];
+    }
+
+    function classifyCurrentPhase(ms) {
+      if (activeSwallow && activeSwallow.onsetMs != null) {
+        return 'A'; // swallow apnea
+      }
+
+      const { dpSlopeDeadband } = getParams();
+      const slope = getCurrentDPSlope();
+
+      if (slope > dpSlopeDeadband) return 'I';
+      if (slope < -dpSlopeDeadband) return 'E';
+
+      // deadband 영역이면 직전 phase 유지
+      const last = phaseTimeline.length ? phaseTimeline[phaseTimeline.length - 1].phase : 'A';
+      return last;
+    }
+
+    function updatePhaseTimeline(ms) {
+      const phase = classifyCurrentPhase(ms);
+      phaseTimeline.push({ ms, phase });
+
+      const lastSeg = stableSegments[stableSegments.length - 1];
+
+      // swallow apnea(A)는 stable respiratory segment 목록에는 넣지 않음
+      if (phase === 'A') return;
+
+      if (!lastSeg || lastSeg.phase !== phase) {
+        stableSegments.push({ phase, startMs: ms, endMs: ms });
+      } else {
+        lastSeg.endMs = ms;
+      }
+
+      mCurrentPhase.textContent = phase === 'I' ? 'Inspiration' : phase === 'E' ? 'Expiration' : 'Apnea';
+    }
+
+    function getStablePhaseAround(centerMs, side = 'pre') {
+      const { stablePhaseMs } = getParams();
+
+      let start, end;
+      if (side === 'pre') {
+        start = centerMs - stablePhaseMs;
+        end = centerMs;
+      } else {
+        start = centerMs;
+        end = centerMs + stablePhaseMs;
+      }
+
+      const win = phaseTimeline.filter(p => p.ms >= start && p.ms <= end && p.phase !== 'A');
+      if (!win.length) return 'Unknown';
+
+      let iCount = 0, eCount = 0;
+      for (const p of win) {
+        if (p.phase === 'I') iCount++;
+        if (p.phase === 'E') eCount++;
+      }
+
+      if (iCount === eCount) {
+        return win[win.length - 1]?.phase === 'I' ? 'I' : 'E';
+      }
+      return iCount > eCount ? 'I' : 'E';
+    }
+
+    function getPhaseAtOnset(ms) {
+      const pre = phaseTimeline
+        .filter(p => p.ms <= ms)
+        .slice(-5)
+        .filter(p => p.phase !== 'A');
+
+      if (!pre.length) return 'Unknown';
+      const last = pre[pre.length - 1].phase;
+      return last;
+    }
+
+    function getLastExpirationSegmentBefore(ms) {
+      for (let i = stableSegments.length - 1; i >= 0; i--) {
+        const seg = stableSegments[i];
+        if (seg.phase === 'E' && seg.startMs <= ms) {
+          return seg;
+        }
+      }
+      return null;
+    }
+
+    function getMeanCycleDuration() {
+      const inspirationStarts = stableSegments
+        .filter(s => s.phase === 'I')
+        .map(s => s.startMs);
+
+      if (inspirationStarts.length < 2) return null;
+
+      const cycles = [];
+      for (let i = 1; i < inspirationStarts.length; i++) {
+        cycles.push(inspirationStarts[i] - inspirationStarts[i - 1]);
+      }
+      return mean(cycles);
+    }
+
+    function classifyExpStage(onsetMs, expSeg) {
+      if (!expSeg) return '-';
+      const dur = expSeg.endMs - expSeg.startMs;
+      if (dur <= 0) return '-';
+
+      const dt = onsetMs - expSeg.startMs;
+      const ratio = dt / dur;
+
+      if (ratio < 0.33) return 'Early';
+      if (ratio < 0.66) return 'Mid';
+      return 'Late';
+    }
+
+    function finalizeSwallow(endMs) {
+      if (!activeSwallow || activeSwallow.onsetMs == null) return;
+
+      const onsetMs = activeSwallow.onsetMs;
+      const prePhase = getStablePhaseAround(onsetMs, 'pre');
+      const postPhase = getStablePhaseAround(endMs, 'post');
+      const onsetPhase = getPhaseAtOnset(onsetMs);
+      const expSeg = getLastExpirationSegmentBefore(onsetMs);
+
+      let expDelta = null;
+      let expStage = '-';
+
+      if (prePhase === 'E' && expSeg) {
+        expDelta = onsetMs - expSeg.startMs;
+        expStage = classifyExpStage(onsetMs, expSeg);
+      }
+
+      const ev = {
+        index: swallowEvents.length + 1,
+        onsetMs,
+        endMs,
+        durationMs: endMs - onsetMs,
+        prePhase,
+        postPhase,
+        pattern: `${prePhase}-S-${postPhase}`,
+        onsetRespPhase: onsetPhase,
+        expStartToOnsetMs: expDelta,
+        expStage
+      };
+
+      swallowEvents.push(ev);
+      activeSwallow = null;
+      fsrAboveCount = 0;
+      fsrBelowCount = 0;
+
+      renderEvents();
+      updateSummary();
+      chart.update();
+    }
+
+    function updateSwallowDetection(ms, fsr) {
+      const { threshold } = getFsrThreshold();
+      const { fsrSustain } = getParams();
+
+      mFsrThreshold.textContent = Number.isFinite(threshold) ? threshold.toFixed(1) : '-';
+
+      if (!Number.isFinite(threshold)) return;
+
+      if (!activeSwallow) {
+        if (fsr > threshold) {
+          fsrAboveCount++;
+          if (fsrAboveCount >= fsrSustain) {
+            activeSwallow = { onsetMs: ms };
+            fsrBelowCount = 0;
+            liveExplain.textContent = `Swallow detected: onset at ${ms} ms`;
+          }
+        } else {
+          fsrAboveCount = 0;
+        }
+      } else {
+        if (fsr <= threshold) {
+          fsrBelowCount++;
+          if (fsrBelowCount >= fsrSustain) {
+            finalizeSwallow(ms);
+          }
+        } else {
+          fsrBelowCount = 0;
+        }
+      }
+    }
+
+    function updateSummary() {
+      mSwallowCount.textContent = String(swallowEvents.length);
+      const cycle = getMeanCycleDuration();
+      mCycleMean.textContent = cycle ? `${cycle.toFixed(0)} ms` : '-';
+    }
+
+    function renderEvents() {
+      eventTableBody.innerHTML = swallowEvents.map(ev => `
+        <tr>
+          <td>${ev.index}</td>
+          <td>${ev.onsetMs}</td>
+          <td>${ev.endMs}</td>
+          <td>${ev.durationMs}</td>
+          <td>${ev.prePhase}</td>
+          <td>${ev.postPhase}</td>
+          <td>${ev.pattern}</td>
+          <td>${ev.onsetRespPhase}</td>
+          <td>${ev.expStartToOnsetMs ?? '-'}</td>
+          <td>${ev.expStage}</td>
+        </tr>
+      `).join('');
+    }
+
     function addPoint(ms, dp, fsr) {
-      // 최근 20초만 표시
-      const t0 = rows.length ? rows[0][0] : ms;
+      rows.push({ ms, dp, fsr });
+
+      const t0 = rows[0].ms;
       const t = (ms - t0) / 1000.0;
 
-      rows.push([ms, dp, fsr]);
+      updateSwallowDetection(ms, fsr);
+      updatePhaseTimeline(ms);
 
       chart.data.labels.push(t.toFixed(2));
       chart.data.datasets[0].data.push(dp);
       chart.data.datasets[1].data.push(fsr);
 
-      // points 너무 많으면 잘라서 브라우저 렉 방지
       const MAX = 2000;
       if (chart.data.labels.length > MAX) {
         chart.data.labels.shift();
         chart.data.datasets[0].data.shift();
         chart.data.datasets[1].data.shift();
       }
-      chart.update();
+
+      chart.update('none');
+      updateSummary();
     }
 
     async function readLoop() {
       const dec = new TextDecoder();
       let buf = "";
+
       while (port && port.readable) {
         try {
           const { value, done } = await reader.read();
           if (done) break;
+
           buf += dec.decode(value, { stream: true });
           let idx;
+
           while ((idx = buf.indexOf("\n")) >= 0) {
             const line = buf.slice(0, idx).trim();
             buf = buf.slice(idx + 1);
+
             if (!line) continue;
             if (line.startsWith("ms,")) continue;
 
@@ -108,6 +622,7 @@
               const ms = parseInt(parts[0], 10);
               const dp = parseFloat(parts[1]);
               const fsr = parseInt(parts[2], 10);
+
               if (!Number.isNaN(ms) && !Number.isNaN(dp) && !Number.isNaN(fsr)) {
                 addPoint(ms, dp, fsr);
               }
@@ -115,16 +630,39 @@
           }
         } catch (e) {
           console.error(e);
+          statusEl.textContent = "Status: read error";
           break;
         }
       }
     }
 
+    function resetAll() {
+      rows = [];
+      phaseTimeline = [];
+      stableSegments = [];
+      swallowEvents = [];
+      activeSwallow = null;
+      fsrAboveCount = 0;
+      fsrBelowCount = 0;
+
+      chart.data.labels = [];
+      chart.data.datasets[0].data = [];
+      chart.data.datasets[1].data = [];
+      chart.update();
+
+      renderEvents();
+      updateSummary();
+      mCurrentPhase.textContent = '-';
+      mFsrThreshold.textContent = '-';
+      liveExplain.textContent = '버퍼를 초기화했습니다.';
+    }
+
     btnConnect.onclick = async () => {
       if (!("serial" in navigator)) {
-        alert("Web Serial not supported. Use Chrome/Edge.");
+        alert("Web Serial not supported. Chrome/Edge 사용 권장");
         return;
       }
+
       port = await navigator.serial.requestPort();
       await port.open({ baudRate: 115200 });
 
@@ -134,48 +672,67 @@
       statusEl.textContent = "Status: connected";
       setUI(true);
 
-      // Arduino가 mode csv / start/stop을 지원한다는 가정
       await sendLine("mode csv");
-      await sendLine("start");
-
       readLoop();
     };
 
     btnStart.onclick = async () => {
-      // start 누르면 자동 clear
-      rows = [];
-      chart.data.labels = [];
-      chart.data.datasets[0].data = [];
-      chart.data.datasets[1].data = [];
-      chart.update();
-
+      resetAll();
       await sendLine("start");
       running = true;
+      statusEl.textContent = "Status: running";
     };
 
     btnStop.onclick = async () => {
       await sendLine("stop");
       running = false;
+      statusEl.textContent = "Status: stopped";
     };
 
-    btnClear.onclick = async () => {
-      rows = [];
-      chart.data.labels = [];
-      chart.data.datasets[0].data = [];
-      chart.data.datasets[1].data = [];
-      chart.update();
+    btnClear.onclick = () => {
+      resetAll();
     };
 
     btnSave.onclick = () => {
       if (!rows.length) return;
+
       let csv = "ms,dp_pa,fsr_raw\n";
-      csv += rows.map(r => `${r[0]},${r[1]},${r[2]}`).join("\n");
+      csv += rows.map(r => `${r.ms},${r.dp},${r.fsr}`).join("\n");
 
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `breath_${Date.now()}.csv`;
+      a.download = `breath_raw_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    btnSaveEvents.onclick = () => {
+      if (!swallowEvents.length) return;
+
+      let csv = [
+        "index,onset_ms,end_ms,duration_ms,pre_phase,post_phase,pattern,onset_resp_phase,exp_start_to_onset_ms,exp_stage"
+      ].join("\n");
+
+      csv += "\n" + swallowEvents.map(ev => [
+        ev.index,
+        ev.onsetMs,
+        ev.endMs,
+        ev.durationMs,
+        ev.prePhase,
+        ev.postPhase,
+        ev.pattern,
+        ev.onsetRespPhase,
+        ev.expStartToOnsetMs ?? "",
+        ev.expStage
+      ].join(",")).join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `swallow_events_${Date.now()}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     };
