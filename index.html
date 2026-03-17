@@ -9,61 +9,86 @@
     .toolbar { margin-bottom: 12px; }
     button { margin-right: 8px; padding: 10px 14px; }
     #status { margin: 10px 0; font-weight: 600; }
+
     .grid {
       display: grid;
       grid-template-columns: 1.2fr 1fr;
       gap: 16px;
       align-items: start;
     }
+
     .card {
       border: 1px solid #ddd;
       border-radius: 10px;
       padding: 12px;
       background: #fff;
     }
+
     .metrics {
       display: grid;
       grid-template-columns: repeat(2, minmax(180px, 1fr));
       gap: 8px;
       margin-bottom: 10px;
     }
+
     .metric {
       border: 1px solid #eee;
       border-radius: 8px;
       padding: 10px;
       background: #fafafa;
     }
+
     .metric .k { font-size: 12px; color: #666; }
     .metric .v { font-size: 18px; font-weight: 700; margin-top: 4px; }
+
     canvas { max-width: 100%; }
+
     table {
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
     }
+
     th, td {
       border-bottom: 1px solid #eee;
       padding: 8px 6px;
       text-align: left;
       vertical-align: top;
     }
+
     th { background: #fafafa; position: sticky; top: 0; }
+
     .small { font-size: 12px; color: #666; }
+
     .scroll {
       max-height: 420px;
       overflow: auto;
       border: 1px solid #eee;
       border-radius: 8px;
     }
+
     .row {
       display: flex;
       gap: 12px;
       flex-wrap: wrap;
       margin: 8px 0 0 0;
     }
+
     label { font-size: 13px; }
     input[type="number"] { width: 80px; }
+
     .legend-note { font-size: 12px; color: #666; margin-top: 6px; }
+
+    .summary-box {
+      white-space: pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      background: #fafafa;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 12px;
+    }
   </style>
 </head>
 <body>
@@ -94,7 +119,7 @@
       <label>DP smoothing window
         <input id="dpSmoothWindow" type="number" value="7" min="3" step="2">
       </label>
-      <label>DP slope deadband
+      <label>DP neutral band
         <input id="dpSlopeDeadband" type="number" value="1.5" min="0.1" step="0.1">
       </label>
       <label>Stable phase window (ms)
@@ -102,7 +127,7 @@
       </label>
     </div>
     <div class="legend-note">
-      FSR onset = baseline mean + k·SD 초과 + 연속 N포인트 유지. Swallow event 구간에서는 dp_pa를 apnea로 처리.
+      FSR onset = baseline mean + k·SD 초과 + 연속 N포인트 유지. dp_pa는 기울기가 아니라 0 기준 부호로 I/E 판정하며, swallow event 구간에서는 apnea로 처리합니다.
     </div>
   </div>
 
@@ -164,6 +189,11 @@
     </div>
   </div>
 
+  <div class="card" style="margin-top:16px;">
+    <h3>Stop Analysis Summary</h3>
+    <div id="summaryText" class="summary-box">Stop을 누르면 요약 결과가 여기에 표시됩니다.</div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     let port, reader, writer;
@@ -186,7 +216,6 @@
     let fsrAboveCount = 0;
     let fsrBelowCount = 0;
 
-    // chart annotation helpers
     const swallowShadesPlugin = {
       id: 'swallowShadesPlugin',
       beforeDraw(chart, args, opts) {
@@ -201,6 +230,7 @@
         const maxT = visibleT[visibleT.length - 1];
 
         ctx.save();
+
         swallowEvents.forEach(ev => {
           const t0 = (ev.onsetMs - rows[0].ms) / 1000;
           const t1 = (ev.endMs - rows[0].ms) / 1000;
@@ -221,6 +251,7 @@
             ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
           }
         }
+
         ctx.restore();
       }
     };
@@ -239,6 +270,7 @@
     const mCycleMean = document.getElementById('mCycleMean');
     const liveExplain = document.getElementById('liveExplain');
     const eventTableBody = document.getElementById('eventTableBody');
+    const summaryText = document.getElementById('summaryText');
 
     function getParams() {
       return {
@@ -334,8 +366,9 @@
 
     function getFsrThreshold() {
       const { fsrBaseWindow, fsrSdK } = getParams();
+
       const usable = rows
-        .filter((r, idx) => !isInsideSwallow(r.ms))
+        .filter(r => !isInsideSwallow(r.ms))
         .slice(-fsrBaseWindow)
         .map(r => r.fsr);
 
@@ -357,43 +390,43 @@
       return swallowEvents.some(ev => ms >= ev.onsetMs && ms <= ev.endMs);
     }
 
-    function getCurrentDPSlope() {
+    // 기울기 대신 현재 dp 레벨(스무딩값) 사용
+    function getCurrentDPLevel() {
       const { dpSmoothWindow } = getParams();
-      if (rows.length < 3) return 0;
+      if (!rows.length) return 0;
 
       const dp = rows.map(r => r.dp);
       const sm = movingAverage(dp, dpSmoothWindow);
-
-      const n = sm.length;
-      if (n < 3) return 0;
-
-      // 단순 최근 2점 차분
-      return sm[n - 1] - sm[n - 2];
+      return sm[sm.length - 1];
     }
 
+    // 0 기준 부호로 I/E 판단
     function classifyCurrentPhase(ms) {
       if (activeSwallow && activeSwallow.onsetMs != null) {
         return 'A'; // swallow apnea
       }
 
       const { dpSlopeDeadband } = getParams();
-      const slope = getCurrentDPSlope();
+      const dpLevel = getCurrentDPLevel();
 
-      if (slope > dpSlopeDeadband) return 'I';
-      if (slope < -dpSlopeDeadband) return 'E';
+      if (dpLevel > dpSlopeDeadband) return 'I';
+      if (dpLevel < -dpSlopeDeadband) return 'E';
 
-      // deadband 영역이면 직전 phase 유지
-      const last = phaseTimeline.length ? phaseTimeline[phaseTimeline.length - 1].phase : 'A';
-      return last;
+      return 'A'; // 0 근처는 apnea/neutral
     }
 
     function updatePhaseTimeline(ms) {
       const phase = classifyCurrentPhase(ms);
       phaseTimeline.push({ ms, phase });
 
+      mCurrentPhase.textContent =
+        phase === 'I' ? 'Inspiration' :
+        phase === 'E' ? 'Expiration' :
+        'Apnea';
+
       const lastSeg = stableSegments[stableSegments.length - 1];
 
-      // swallow apnea(A)는 stable respiratory segment 목록에는 넣지 않음
+      // apnea는 stable respiratory segment에 넣지 않음
       if (phase === 'A') return;
 
       if (!lastSeg || lastSeg.phase !== phase) {
@@ -401,8 +434,6 @@
       } else {
         lastSeg.endMs = ms;
       }
-
-      mCurrentPhase.textContent = phase === 'I' ? 'Inspiration' : phase === 'E' ? 'Expiration' : 'Apnea';
     }
 
     function getStablePhaseAround(centerMs, side = 'pre') {
@@ -429,6 +460,7 @@
       if (iCount === eCount) {
         return win[win.length - 1]?.phase === 'I' ? 'I' : 'E';
       }
+
       return iCount > eCount ? 'I' : 'E';
     }
 
@@ -439,8 +471,7 @@
         .filter(p => p.phase !== 'A');
 
       if (!pre.length) return 'Unknown';
-      const last = pre[pre.length - 1].phase;
-      return last;
+      return pre[pre.length - 1].phase;
     }
 
     function getLastExpirationSegmentBefore(ms) {
@@ -574,6 +605,51 @@
       `).join('');
     }
 
+    function renderStopSummary() {
+      const { baseMean, baseSd, threshold } = getFsrThreshold();
+      const meanCycle = getMeanCycleDuration();
+      const durations = swallowEvents.map(ev => ev.durationMs);
+      const meanDuration = durations.length ? mean(durations) : null;
+
+      const patternCounts = {};
+      swallowEvents.forEach(ev => {
+        patternCounts[ev.pattern] = (patternCounts[ev.pattern] || 0) + 1;
+      });
+
+      const patternText = Object.keys(patternCounts).length
+        ? Object.entries(patternCounts).map(([k, v]) => `${k}: ${v}`).join('\n')
+        : '없음';
+
+      const eventText = swallowEvents.length
+        ? swallowEvents.map(ev =>
+            [
+              `[Event ${ev.index}]`,
+              `onset: ${ev.onsetMs} ms`,
+              `end: ${ev.endMs} ms`,
+              `duration: ${ev.durationMs} ms`,
+              `pre-phase: ${ev.prePhase}`,
+              `post-phase: ${ev.postPhase}`,
+              `pattern: ${ev.pattern}`,
+              `at onset: ${ev.onsetRespPhase}`,
+              `exp start → onset: ${ev.expStartToOnsetMs ?? '-'} ms`,
+              `exp phase stage: ${ev.expStage}`
+            ].join('\n')
+          ).join('\n\n')
+        : '검출된 swallow event 없음';
+
+      summaryText.textContent =
+        `[요약]\n` +
+        `총 데이터 포인트: ${rows.length}\n` +
+        `FSR baseline mean: ${baseMean.toFixed(2)}\n` +
+        `FSR baseline SD: ${baseSd.toFixed(2)}\n` +
+        `FSR threshold: ${Number.isFinite(threshold) ? threshold.toFixed(2) : '-'}\n` +
+        `총 swallow 수: ${swallowEvents.length}\n` +
+        `평균 swallow duration: ${meanDuration ? meanDuration.toFixed(1) + ' ms' : '-'}\n` +
+        `평균 호흡 주기: ${meanCycle ? meanCycle.toFixed(1) + ' ms' : '-'}\n\n` +
+        `[Pattern counts]\n${patternText}\n\n` +
+        `[Event details]\n${eventText}`;
+    }
+
     function addPoint(ms, dp, fsr) {
       rows.push({ ms, dp, fsr });
 
@@ -655,6 +731,7 @@
       mCurrentPhase.textContent = '-';
       mFsrThreshold.textContent = '-';
       liveExplain.textContent = '버퍼를 초기화했습니다.';
+      summaryText.textContent = 'Stop을 누르면 요약 결과가 여기에 표시됩니다.';
     }
 
     btnConnect.onclick = async () => {
@@ -687,6 +764,7 @@
       await sendLine("stop");
       running = false;
       statusEl.textContent = "Status: stopped";
+      renderStopSummary();
     };
 
     btnClear.onclick = () => {
