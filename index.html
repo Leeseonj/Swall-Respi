@@ -4,11 +4,32 @@
   <meta charset="utf-8" />
   <title>Breath & Swallow Logger (Web Serial)</title>
   <style>
-    body { font-family: system-ui, sans-serif; padding: 16px; line-height: 1.4; }
-    h2, h3 { margin: 0 0 8px 0; }
-    .toolbar { margin-bottom: 12px; }
-    button { margin-right: 8px; padding: 10px 14px; }
-    #status { margin: 10px 0; font-weight: 600; }
+    body {
+      font-family: system-ui, sans-serif;
+      padding: 16px;
+      line-height: 1.4;
+      background: #fff;
+      color: #111;
+    }
+
+    h2, h3 {
+      margin: 0 0 8px 0;
+    }
+
+    .toolbar {
+      margin-bottom: 12px;
+    }
+
+    button {
+      margin-right: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+
+    #status {
+      margin: 10px 0;
+      font-weight: 600;
+    }
 
     .grid {
       display: grid;
@@ -38,10 +59,20 @@
       background: #fafafa;
     }
 
-    .metric .k { font-size: 12px; color: #666; }
-    .metric .v { font-size: 18px; font-weight: 700; margin-top: 4px; }
+    .metric .k {
+      font-size: 12px;
+      color: #666;
+    }
 
-    canvas { max-width: 100%; }
+    .metric .v {
+      font-size: 18px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    canvas {
+      max-width: 100%;
+    }
 
     table {
       width: 100%;
@@ -56,9 +87,16 @@
       vertical-align: top;
     }
 
-    th { background: #fafafa; position: sticky; top: 0; }
+    th {
+      background: #fafafa;
+      position: sticky;
+      top: 0;
+    }
 
-    .small { font-size: 12px; color: #666; }
+    .small {
+      font-size: 12px;
+      color: #666;
+    }
 
     .scroll {
       max-height: 420px;
@@ -74,10 +112,19 @@
       margin: 8px 0 0 0;
     }
 
-    label { font-size: 13px; }
-    input[type="number"] { width: 80px; }
+    label {
+      font-size: 13px;
+    }
 
-    .legend-note { font-size: 12px; color: #666; margin-top: 6px; }
+    input[type="number"] {
+      width: 80px;
+    }
+
+    .legend-note {
+      font-size: 12px;
+      color: #666;
+      margin-top: 6px;
+    }
 
     .summary-box {
       white-space: pre-wrap;
@@ -88,6 +135,10 @@
       border: 1px solid #eee;
       border-radius: 8px;
       padding: 12px;
+    }
+
+    .muted {
+      color: #666;
     }
   </style>
 </head>
@@ -110,24 +161,31 @@
       <label>FSR baseline window (pts)
         <input id="fsrBaseWindow" type="number" value="120" min="20" step="10">
       </label>
+
       <label>FSR threshold SD
         <input id="fsrSdK" type="number" value="3" min="1" step="0.5">
       </label>
+
       <label>FSR sustain points
         <input id="fsrSustain" type="number" value="2" min="1" step="1">
       </label>
+
       <label>DP smoothing window
         <input id="dpSmoothWindow" type="number" value="7" min="3" step="2">
       </label>
+
       <label>DP neutral band
-        <input id="dpSlopeDeadband" type="number" value="1.5" min="0.1" step="0.1">
+        <input id="dpNeutralBand" type="number" value="1.5" min="0.1" step="0.1">
       </label>
+
       <label>Stable phase window (ms)
         <input id="stablePhaseMs" type="number" value="300" min="100" step="50">
       </label>
     </div>
+
     <div class="legend-note">
-      FSR onset = baseline mean + k·SD 초과 + 연속 N포인트 유지. dp_pa는 기울기가 아니라 0 기준 부호로 I/E 판정하며, swallow event 구간에서는 apnea로 처리합니다.
+      Stop 후 전체 데이터를 일괄 분석합니다. FSR로 swallow event를 만들고, dp_pa는 0 기준 부호로 I/E/A를 판정합니다.
+      swallow event 구간에서는 dp_pa를 apnea로 처리합니다.
     </div>
   </div>
 
@@ -136,7 +194,7 @@
       <h3>Signals</h3>
       <canvas id="chart" height="140"></canvas>
       <div class="legend-note">
-        파란색: dp_pa / 주황색: FSR_raw / 이벤트 동안 회색 음영 표시
+        파란색: dp_pa / 주황색: FSR_raw / Stop 후 분석된 swallow event는 회색 음영으로 표시
       </div>
     </div>
 
@@ -147,21 +205,25 @@
           <div class="k">Swallow count</div>
           <div class="v" id="mSwallowCount">0</div>
         </div>
+
         <div class="metric">
           <div class="k">Current phase</div>
           <div class="v" id="mCurrentPhase">-</div>
         </div>
+
         <div class="metric">
           <div class="k">FSR threshold</div>
           <div class="v" id="mFsrThreshold">-</div>
         </div>
+
         <div class="metric">
           <div class="k">Mean cycle duration</div>
           <div class="v" id="mCycleMean">-</div>
         </div>
       </div>
+
       <div class="small" id="liveExplain">
-        연결 후 Start를 누르면 실시간으로 swallow event와 respiration phase를 분석합니다.
+        연결 후 Start를 누르면 raw 데이터를 수집합니다. Stop을 누르면 전체 데이터를 분석해 swallow event를 생성합니다.
       </div>
     </div>
   </div>
@@ -199,28 +261,27 @@
     let port, reader, writer;
     let running = false;
 
-    // raw rows: {ms, dp, fsr}
+    // raw rows: { ms, dp, fsr }
     let rows = [];
 
-    // phase samples: {ms, phase}  phase ∈ 'I','E','A'
-    let phaseTimeline = [];
+    // offline analysis results
+    let phaseTimeline = [];   // [{ms, phase}]
+    let stableSegments = [];  // [{phase, startMs, endMs}]
+    let swallowEvents = [];   // [{...}]
 
-    // breath segments: {phase:'I'|'E', startMs, endMs}
-    let stableSegments = [];
+    let lastAnalysisStats = {
+      baseMean: null,
+      baseSd: null,
+      threshold: null
+    };
 
-    // swallow events
-    let swallowEvents = [];
-
-    // current swallow tracking
-    let activeSwallow = null;
-    let fsrAboveCount = 0;
-    let fsrBelowCount = 0;
-
+    // ===== Chart shading plugin =====
     const swallowShadesPlugin = {
       id: 'swallowShadesPlugin',
-      beforeDraw(chart, args, opts) {
+      beforeDraw(chart) {
         const { ctx, chartArea, scales } = chart;
-        if (!chartArea || !scales.x || !rows.length) return;
+        if (!chartArea || !scales.x || !rows.length || !swallowEvents.length) return;
+
         const xScale = scales.x;
         const labels = chart.data.labels;
         if (!labels.length) return;
@@ -234,28 +295,21 @@
         swallowEvents.forEach(ev => {
           const t0 = (ev.onsetMs - rows[0].ms) / 1000;
           const t1 = (ev.endMs - rows[0].ms) / 1000;
+
           if (t1 < minT || t0 > maxT) return;
 
           const x0 = xScale.getPixelForValue(t0.toFixed(2));
           const x1 = xScale.getPixelForValue(t1.toFixed(2));
+
           ctx.fillStyle = 'rgba(120,120,120,0.12)';
           ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
         });
-
-        if (activeSwallow && activeSwallow.onsetMs != null) {
-          const t0 = (activeSwallow.onsetMs - rows[0].ms) / 1000;
-          if (t0 >= minT && t0 <= maxT) {
-            const x0 = xScale.getPixelForValue(t0.toFixed(2));
-            const x1 = chartArea.right;
-            ctx.fillStyle = 'rgba(120,120,120,0.08)';
-            ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
-          }
-        }
 
         ctx.restore();
       }
     };
 
+    // ===== DOM =====
     const statusEl = document.getElementById('status');
     const btnConnect = document.getElementById('connect');
     const btnStart = document.getElementById('start');
@@ -278,12 +332,14 @@
         fsrSdK: parseFloat(document.getElementById('fsrSdK').value),
         fsrSustain: parseInt(document.getElementById('fsrSustain').value, 10),
         dpSmoothWindow: parseInt(document.getElementById('dpSmoothWindow').value, 10),
-        dpSlopeDeadband: parseFloat(document.getElementById('dpSlopeDeadband').value),
+        dpNeutralBand: parseFloat(document.getElementById('dpNeutralBand').value),
         stablePhaseMs: parseInt(document.getElementById('stablePhaseMs').value, 10)
       };
     }
 
+    // ===== Chart =====
     const ctx = document.getElementById('chart').getContext('2d');
+
     const chart = new Chart(ctx, {
       type: 'line',
       data: {
@@ -312,8 +368,12 @@
         responsive: true,
         interaction: { mode: 'nearest', intersect: false },
         scales: {
-          x: { title: { display: true, text: 'Time (s)' } },
-          y: { title: { display: true, text: 'DP (Pa)' } },
+          x: {
+            title: { display: true, text: 'Time (s)' }
+          },
+          y: {
+            title: { display: true, text: 'DP (Pa)' }
+          },
           y2: {
             position: 'right',
             grid: { drawOnChartArea: false },
@@ -340,6 +400,7 @@
       await writer.write(enc.encode(s + "\n"));
     }
 
+    // ===== Utils =====
     function mean(arr) {
       if (!arr.length) return 0;
       return arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -356,87 +417,145 @@
       if (!data.length) return [];
       const out = new Array(data.length);
       let sum = 0;
+
       for (let i = 0; i < data.length; i++) {
         sum += data[i];
         if (i >= windowSize) sum -= data[i - windowSize];
         out[i] = sum / Math.min(i + 1, windowSize);
       }
+
       return out;
     }
 
-    function getFsrThreshold() {
-      const { fsrBaseWindow, fsrSdK } = getParams();
+    function classifyExpStage(onsetMs, expSeg) {
+      if (!expSeg) return '-';
 
-      const usable = rows
-        .filter(r => !isInsideSwallow(r.ms))
-        .slice(-fsrBaseWindow)
-        .map(r => r.fsr);
+      const dur = expSeg.endMs - expSeg.startMs;
+      if (dur <= 0) return '-';
 
-      if (usable.length < Math.max(10, fsrBaseWindow / 4)) {
-        const fallback = rows.slice(-fsrBaseWindow).map(r => r.fsr);
-        if (!fallback.length) return { baseMean: 0, baseSd: 0, threshold: Infinity };
-        const m = mean(fallback);
-        const s = std(fallback);
-        return { baseMean: m, baseSd: s, threshold: m + fsrSdK * s };
-      }
+      const dt = onsetMs - expSeg.startMs;
+      const ratio = dt / dur;
 
-      const m = mean(usable);
-      const s = std(usable);
-      return { baseMean: m, baseSd: s, threshold: m + fsrSdK * s };
+      if (ratio < 0.33) return 'Early';
+      if (ratio < 0.66) return 'Mid';
+      return 'Late';
     }
 
-    function isInsideSwallow(ms) {
-      if (activeSwallow && activeSwallow.onsetMs != null && ms >= activeSwallow.onsetMs) return true;
-      return swallowEvents.some(ev => ms >= ev.onsetMs && ms <= ev.endMs);
-    }
+    // ===== Offline analysis =====
 
-    // 기울기 대신 현재 dp 레벨(스무딩값) 사용
-    function getCurrentDPLevel() {
+    function computeSmoothedDP() {
       const { dpSmoothWindow } = getParams();
-      if (!rows.length) return 0;
-
       const dp = rows.map(r => r.dp);
-      const sm = movingAverage(dp, dpSmoothWindow);
-      return sm[sm.length - 1];
+      return movingAverage(dp, dpSmoothWindow);
     }
 
-    // 0 기준 부호로 I/E 판단
-    function classifyCurrentPhase(ms) {
-      if (activeSwallow && activeSwallow.onsetMs != null) {
-        return 'A'; // swallow apnea
+    function computeSmoothedFSR() {
+      const fsr = rows.map(r => r.fsr);
+      return movingAverage(fsr, 3);
+    }
+
+    function classifyPhaseFromLevel(dpLevel) {
+      const { dpNeutralBand } = getParams();
+
+      if (dpLevel > dpNeutralBand) return 'I';
+      if (dpLevel < -dpNeutralBand) return 'E';
+      return 'A';
+    }
+
+    function detectSwallowEventsOffline(smoothedFSR) {
+      const { fsrBaseWindow, fsrSdK, fsrSustain } = getParams();
+      const events = [];
+
+      if (rows.length < 10) {
+        return {
+          events,
+          baseMean: 0,
+          baseSd: 0,
+          threshold: Infinity
+        };
       }
 
-      const { dpSlopeDeadband } = getParams();
-      const dpLevel = getCurrentDPLevel();
+      const baseN = Math.min(fsrBaseWindow, smoothedFSR.length);
+      const baseline = smoothedFSR.slice(0, baseN);
 
-      if (dpLevel > dpSlopeDeadband) return 'I';
-      if (dpLevel < -dpSlopeDeadband) return 'E';
+      const baseMean = mean(baseline);
+      const baseSd = std(baseline);
+      const threshold = baseMean + fsrSdK * baseSd;
 
-      return 'A'; // 0 근처는 apnea/neutral
-    }
+      let inSwallow = false;
+      let aboveCount = 0;
+      let belowCount = 0;
+      let onsetIdx = null;
 
-    function updatePhaseTimeline(ms) {
-      const phase = classifyCurrentPhase(ms);
-      phaseTimeline.push({ ms, phase });
+      for (let i = 0; i < smoothedFSR.length; i++) {
+        const v = smoothedFSR[i];
 
-      mCurrentPhase.textContent =
-        phase === 'I' ? 'Inspiration' :
-        phase === 'E' ? 'Expiration' :
-        'Apnea';
+        if (!inSwallow) {
+          if (v > threshold) {
+            aboveCount++;
+            if (aboveCount >= fsrSustain) {
+              onsetIdx = Math.max(0, i - fsrSustain + 1);
+              inSwallow = true;
+              belowCount = 0;
+            }
+          } else {
+            aboveCount = 0;
+          }
+        } else {
+          if (v <= threshold) {
+            belowCount++;
+            if (belowCount >= fsrSustain) {
+              const endIdx = i;
+              events.push({
+                onsetIdx,
+                endIdx,
+                onsetMs: rows[onsetIdx].ms,
+                endMs: rows[endIdx].ms,
+                durationMs: rows[endIdx].ms - rows[onsetIdx].ms
+              });
 
-      const lastSeg = stableSegments[stableSegments.length - 1];
-
-      // apnea는 stable respiratory segment에 넣지 않음
-      if (phase === 'A') return;
-
-      if (!lastSeg || lastSeg.phase !== phase) {
-        stableSegments.push({ phase, startMs: ms, endMs: ms });
-      } else {
-        lastSeg.endMs = ms;
+              inSwallow = false;
+              aboveCount = 0;
+              belowCount = 0;
+              onsetIdx = null;
+            }
+          } else {
+            belowCount = 0;
+          }
+        }
       }
+
+      return { events, baseMean, baseSd, threshold };
     }
 
-    function getStablePhaseAround(centerMs, side = 'pre') {
+    function buildPhaseTimelineOffline(smoothedDP, detectedEvents) {
+      const timeline = [];
+      const segments = [];
+
+      function insideSwallow(ms) {
+        return detectedEvents.some(ev => ms >= ev.onsetMs && ms <= ev.endMs);
+      }
+
+      for (let i = 0; i < rows.length; i++) {
+        const ms = rows[i].ms;
+        const phase = insideSwallow(ms) ? 'A' : classifyPhaseFromLevel(smoothedDP[i]);
+
+        timeline.push({ ms, phase });
+
+        if (phase === 'A') continue;
+
+        const lastSeg = segments[segments.length - 1];
+        if (!lastSeg || lastSeg.phase !== phase) {
+          segments.push({ phase, startMs: ms, endMs: ms });
+        } else {
+          lastSeg.endMs = ms;
+        }
+      }
+
+      return { timeline, segments };
+    }
+
+    function getStablePhaseAroundFromTimeline(timeline, centerMs, side = 'pre') {
       const { stablePhaseMs } = getParams();
 
       let start, end;
@@ -448,38 +567,37 @@
         end = centerMs + stablePhaseMs;
       }
 
-      const win = phaseTimeline.filter(p => p.ms >= start && p.ms <= end && p.phase !== 'A');
+      const win = timeline.filter(p => p.ms >= start && p.ms <= end && p.phase !== 'A');
       if (!win.length) return 'Unknown';
 
-      let iCount = 0, eCount = 0;
+      let iCount = 0;
+      let eCount = 0;
+
       for (const p of win) {
         if (p.phase === 'I') iCount++;
         if (p.phase === 'E') eCount++;
       }
 
       if (iCount === eCount) {
-        return win[win.length - 1]?.phase === 'I' ? 'I' : 'E';
+        return win[win.length - 1]?.phase ?? 'Unknown';
       }
 
       return iCount > eCount ? 'I' : 'E';
     }
 
-    function getPhaseAtOnset(ms) {
-      const pre = phaseTimeline
-        .filter(p => p.ms <= ms)
-        .slice(-5)
-        .filter(p => p.phase !== 'A');
+    function getPhaseAtOnsetFromTimeline(timeline, onsetMs) {
+      const pre = timeline
+        .filter(p => p.ms <= onsetMs && p.phase !== 'A')
+        .slice(-5);
 
       if (!pre.length) return 'Unknown';
       return pre[pre.length - 1].phase;
     }
 
-    function getLastExpirationSegmentBefore(ms) {
-      for (let i = stableSegments.length - 1; i >= 0; i--) {
-        const seg = stableSegments[i];
-        if (seg.phase === 'E' && seg.startMs <= ms) {
-          return seg;
-        }
+    function getLastExpirationSegmentBeforeFromSegments(segments, ms) {
+      for (let i = segments.length - 1; i >= 0; i--) {
+        const seg = segments[i];
+        if (seg.phase === 'E' && seg.startMs <= ms) return seg;
       }
       return null;
     }
@@ -495,92 +613,81 @@
       for (let i = 1; i < inspirationStarts.length; i++) {
         cycles.push(inspirationStarts[i] - inspirationStarts[i - 1]);
       }
+
       return mean(cycles);
     }
 
-    function classifyExpStage(onsetMs, expSeg) {
-      if (!expSeg) return '-';
-      const dur = expSeg.endMs - expSeg.startMs;
-      if (dur <= 0) return '-';
-
-      const dt = onsetMs - expSeg.startMs;
-      const ratio = dt / dur;
-
-      if (ratio < 0.33) return 'Early';
-      if (ratio < 0.66) return 'Mid';
-      return 'Late';
-    }
-
-    function finalizeSwallow(endMs) {
-      if (!activeSwallow || activeSwallow.onsetMs == null) return;
-
-      const onsetMs = activeSwallow.onsetMs;
-      const prePhase = getStablePhaseAround(onsetMs, 'pre');
-      const postPhase = getStablePhaseAround(endMs, 'post');
-      const onsetPhase = getPhaseAtOnset(onsetMs);
-      const expSeg = getLastExpirationSegmentBefore(onsetMs);
-
-      let expDelta = null;
-      let expStage = '-';
-
-      if (prePhase === 'E' && expSeg) {
-        expDelta = onsetMs - expSeg.startMs;
-        expStage = classifyExpStage(onsetMs, expSeg);
-      }
-
-      const ev = {
-        index: swallowEvents.length + 1,
-        onsetMs,
-        endMs,
-        durationMs: endMs - onsetMs,
-        prePhase,
-        postPhase,
-        pattern: `${prePhase}-S-${postPhase}`,
-        onsetRespPhase: onsetPhase,
-        expStartToOnsetMs: expDelta,
-        expStage
+    function analyzeAllData() {
+      swallowEvents = [];
+      phaseTimeline = [];
+      stableSegments = [];
+      lastAnalysisStats = {
+        baseMean: null,
+        baseSd: null,
+        threshold: null
       };
 
-      swallowEvents.push(ev);
-      activeSwallow = null;
-      fsrAboveCount = 0;
-      fsrBelowCount = 0;
+      if (!rows.length) return;
 
-      renderEvents();
-      updateSummary();
-      chart.update();
+      const smoothedDP = computeSmoothedDP();
+      const smoothedFSR = computeSmoothedFSR();
+
+      const detected = detectSwallowEventsOffline(smoothedFSR);
+      const detectedEvents = detected.events || [];
+
+      lastAnalysisStats = {
+        baseMean: detected.baseMean,
+        baseSd: detected.baseSd,
+        threshold: detected.threshold
+      };
+
+      const built = buildPhaseTimelineOffline(smoothedDP, detectedEvents);
+      phaseTimeline = built.timeline;
+      stableSegments = built.segments;
+
+      swallowEvents = detectedEvents.map((ev, idx) => {
+        const prePhase = getStablePhaseAroundFromTimeline(phaseTimeline, ev.onsetMs, 'pre');
+        const postPhase = getStablePhaseAroundFromTimeline(phaseTimeline, ev.endMs, 'post');
+        const onsetPhase = getPhaseAtOnsetFromTimeline(phaseTimeline, ev.onsetMs);
+        const expSeg = getLastExpirationSegmentBeforeFromSegments(stableSegments, ev.onsetMs);
+
+        let expDelta = null;
+        let expStage = '-';
+
+        if (prePhase === 'E' && expSeg) {
+          expDelta = ev.onsetMs - expSeg.startMs;
+          expStage = classifyExpStage(ev.onsetMs, expSeg);
+        }
+
+        return {
+          index: idx + 1,
+          onsetMs: ev.onsetMs,
+          endMs: ev.endMs,
+          durationMs: ev.durationMs,
+          prePhase,
+          postPhase,
+          pattern: `${prePhase}-S-${postPhase}`,
+          onsetRespPhase: onsetPhase,
+          expStartToOnsetMs: expDelta,
+          expStage
+        };
+      });
+
+      mFsrThreshold.textContent = Number.isFinite(detected.threshold)
+        ? detected.threshold.toFixed(1)
+        : '-';
+
+      const lastPhase = phaseTimeline.length ? phaseTimeline[phaseTimeline.length - 1].phase : 'A';
+      mCurrentPhase.textContent =
+        lastPhase === 'I' ? 'Inspiration' :
+        lastPhase === 'E' ? 'Expiration' :
+        'Apnea';
+
+      liveExplain.textContent =
+        `Stop 후 일괄 분석 완료: swallow ${swallowEvents.length}개 검출, baseline=${detected.baseMean.toFixed(1)}, SD=${detected.baseSd.toFixed(1)}`;
     }
 
-    function updateSwallowDetection(ms, fsr) {
-      const { threshold } = getFsrThreshold();
-      const { fsrSustain } = getParams();
-
-      mFsrThreshold.textContent = Number.isFinite(threshold) ? threshold.toFixed(1) : '-';
-
-      if (!Number.isFinite(threshold)) return;
-
-      if (!activeSwallow) {
-        if (fsr > threshold) {
-          fsrAboveCount++;
-          if (fsrAboveCount >= fsrSustain) {
-            activeSwallow = { onsetMs: ms };
-            fsrBelowCount = 0;
-            liveExplain.textContent = `Swallow detected: onset at ${ms} ms`;
-          }
-        } else {
-          fsrAboveCount = 0;
-        }
-      } else {
-        if (fsr <= threshold) {
-          fsrBelowCount++;
-          if (fsrBelowCount >= fsrSustain) {
-            finalizeSwallow(ms);
-          }
-        } else {
-          fsrBelowCount = 0;
-        }
-      }
-    }
+    // ===== Render =====
 
     function updateSummary() {
       mSwallowCount.textContent = String(swallowEvents.length);
@@ -606,7 +713,7 @@
     }
 
     function renderStopSummary() {
-      const { baseMean, baseSd, threshold } = getFsrThreshold();
+      const { baseMean, baseSd, threshold } = lastAnalysisStats;
       const meanCycle = getMeanCycleDuration();
       const durations = swallowEvents.map(ev => ev.durationMs);
       const meanDuration = durations.length ? mean(durations) : null;
@@ -621,27 +728,25 @@
         : '없음';
 
       const eventText = swallowEvents.length
-        ? swallowEvents.map(ev =>
-            [
-              `[Event ${ev.index}]`,
-              `onset: ${ev.onsetMs} ms`,
-              `end: ${ev.endMs} ms`,
-              `duration: ${ev.durationMs} ms`,
-              `pre-phase: ${ev.prePhase}`,
-              `post-phase: ${ev.postPhase}`,
-              `pattern: ${ev.pattern}`,
-              `at onset: ${ev.onsetRespPhase}`,
-              `exp start → onset: ${ev.expStartToOnsetMs ?? '-'} ms`,
-              `exp phase stage: ${ev.expStage}`
-            ].join('\n')
-          ).join('\n\n')
+        ? swallowEvents.map(ev => [
+            `[Event ${ev.index}]`,
+            `onset: ${ev.onsetMs} ms`,
+            `end: ${ev.endMs} ms`,
+            `duration: ${ev.durationMs} ms`,
+            `pre-phase: ${ev.prePhase}`,
+            `post-phase: ${ev.postPhase}`,
+            `pattern: ${ev.pattern}`,
+            `at onset: ${ev.onsetRespPhase}`,
+            `exp start → onset: ${ev.expStartToOnsetMs ?? '-'} ms`,
+            `exp phase stage: ${ev.expStage}`
+          ].join('\n')).join('\n\n')
         : '검출된 swallow event 없음';
 
       summaryText.textContent =
         `[요약]\n` +
         `총 데이터 포인트: ${rows.length}\n` +
-        `FSR baseline mean: ${baseMean.toFixed(2)}\n` +
-        `FSR baseline SD: ${baseSd.toFixed(2)}\n` +
+        `FSR baseline mean: ${baseMean != null ? baseMean.toFixed(2) : '-'}\n` +
+        `FSR baseline SD: ${baseSd != null ? baseSd.toFixed(2) : '-'}\n` +
         `FSR threshold: ${Number.isFinite(threshold) ? threshold.toFixed(2) : '-'}\n` +
         `총 swallow 수: ${swallowEvents.length}\n` +
         `평균 swallow duration: ${meanDuration ? meanDuration.toFixed(1) + ' ms' : '-'}\n` +
@@ -650,14 +755,12 @@
         `[Event details]\n${eventText}`;
     }
 
+    // ===== Raw data only while running =====
     function addPoint(ms, dp, fsr) {
       rows.push({ ms, dp, fsr });
 
       const t0 = rows[0].ms;
       const t = (ms - t0) / 1000.0;
-
-      updateSwallowDetection(ms, fsr);
-      updatePhaseTimeline(ms);
 
       chart.data.labels.push(t.toFixed(2));
       chart.data.datasets[0].data.push(dp);
@@ -671,7 +774,6 @@
       }
 
       chart.update('none');
-      updateSummary();
     }
 
     async function readLoop() {
@@ -717,9 +819,11 @@
       phaseTimeline = [];
       stableSegments = [];
       swallowEvents = [];
-      activeSwallow = null;
-      fsrAboveCount = 0;
-      fsrBelowCount = 0;
+      lastAnalysisStats = {
+        baseMean: null,
+        baseSd: null,
+        threshold: null
+      };
 
       chart.data.labels = [];
       chart.data.datasets[0].data = [];
@@ -728,12 +832,14 @@
 
       renderEvents();
       updateSummary();
+
       mCurrentPhase.textContent = '-';
       mFsrThreshold.textContent = '-';
       liveExplain.textContent = '버퍼를 초기화했습니다.';
       summaryText.textContent = 'Stop을 누르면 요약 결과가 여기에 표시됩니다.';
     }
 
+    // ===== Buttons =====
     btnConnect.onclick = async () => {
       if (!("serial" in navigator)) {
         alert("Web Serial not supported. Chrome/Edge 사용 권장");
@@ -758,13 +864,23 @@
       await sendLine("start");
       running = true;
       statusEl.textContent = "Status: running";
+      liveExplain.textContent = 'raw 데이터 수집 중입니다. Stop을 누르면 전체 분석을 시작합니다.';
     };
 
     btnStop.onclick = async () => {
       await sendLine("stop");
       running = false;
       statusEl.textContent = "Status: stopped";
+
+      analyzeAllData();
+      renderEvents();
+      updateSummary();
       renderStopSummary();
+      chart.update();
+
+      if (!swallowEvents.length) {
+        liveExplain.textContent = 'Stop 후 전체 분석 완료: swallow event를 찾지 못했습니다.';
+      }
     };
 
     btnClear.onclick = () => {
