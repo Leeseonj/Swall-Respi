@@ -2,145 +2,9 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Breath & Swallow Logger (Web Serial)</title>
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      padding: 16px;
-      line-height: 1.4;
-      background: #fff;
-      color: #111;
-    }
-
-    h2, h3 {
-      margin: 0 0 8px 0;
-    }
-
-    .toolbar {
-      margin-bottom: 12px;
-    }
-
-    button {
-      margin-right: 8px;
-      padding: 10px 14px;
-      cursor: pointer;
-    }
-
-    #status {
-      margin: 10px 0;
-      font-weight: 600;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 16px;
-      align-items: start;
-    }
-
-    .card {
-      border: 1px solid #ddd;
-      border-radius: 10px;
-      padding: 12px;
-      background: #fff;
-    }
-
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(180px, 1fr));
-      gap: 8px;
-      margin-bottom: 10px;
-    }
-
-    .metric {
-      border: 1px solid #eee;
-      border-radius: 8px;
-      padding: 10px;
-      background: #fafafa;
-    }
-
-    .metric .k {
-      font-size: 12px;
-      color: #666;
-    }
-
-    .metric .v {
-      font-size: 18px;
-      font-weight: 700;
-      margin-top: 4px;
-    }
-
-    canvas {
-      max-width: 100%;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-
-    th, td {
-      border-bottom: 1px solid #eee;
-      padding: 8px 6px;
-      text-align: left;
-      vertical-align: top;
-    }
-
-    th {
-      background: #fafafa;
-      position: sticky;
-      top: 0;
-    }
-
-    .small {
-      font-size: 12px;
-      color: #666;
-    }
-
-    .scroll {
-      max-height: 420px;
-      overflow: auto;
-      border: 1px solid #eee;
-      border-radius: 8px;
-    }
-
-    .row {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin: 8px 0 0 0;
-    }
-
-    label {
-      font-size: 13px;
-    }
-
-    input[type="number"] {
-      width: 80px;
-    }
-
-    .legend-note {
-      font-size: 12px;
-      color: #666;
-      margin-top: 6px;
-    }
-
-    .summary-box {
-      white-space: pre-wrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 13px;
-      line-height: 1.5;
-      background: #fafafa;
-      border: 1px solid #eee;
-      border-radius: 8px;
-      padding: 12px;
-    }
-
-    .muted {
-      color: #666;
-    }
-  </style>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <h2>Breath & Swallow Logger</h2>
@@ -153,6 +17,7 @@
     <button id="save" disabled>Save CSV</button>
     <button id="saveEvents" disabled>Save Events CSV</button>
     <button id="clear" disabled>Clear</button>
+    <button id="resetZoom" disabled>Reset Zoom</button>
   </div>
 
   <div class="card" style="margin-bottom:16px;">
@@ -162,30 +27,67 @@
         <input id="fsrBaseWindow" type="number" value="120" min="20" step="10">
       </label>
 
-      <label>FSR threshold SD
-        <input id="fsrSdK" type="number" value="3" min="1" step="0.5">
-      </label>
-
       <label>FSR sustain points
         <input id="fsrSustain" type="number" value="2" min="1" step="1">
+      </label>
+
+      <label>FSR min swallow (ms)
+        <input id="fsrMinSwallowMs" type="number" value="120" min="50" step="10">
+      </label>
+
+      <label>FSR max swallow (ms)
+        <input id="fsrMaxSwallowMs" type="number" value="1500" min="200" step="50">
+      </label>
+
+      <label>FSR onset K (MAD)
+        <input id="fsrOnK" type="number" value="4.0" min="1" step="0.5">
+      </label>
+
+      <label>FSR offset K (MAD)
+        <input id="fsrOffK" type="number" value="1.5" min="0.5" step="0.5">
+      </label>
+
+      <label>FSR refractory (ms)
+        <input id="fsrRefractoryMs" type="number" value="500" min="0" step="50">
       </label>
 
       <label>DP smoothing window
         <input id="dpSmoothWindow" type="number" value="7" min="3" step="2">
       </label>
 
-      <label>DP neutral band
-        <input id="dpNeutralBand" type="number" value="1.5" min="0.1" step="0.1">
+      <label>DP baseline window (pts)
+        <input id="dpBaseWindow" type="number" value="101" min="21" step="10">
+      </label>
+
+      <label>DP enter threshold
+        <input id="dpEnterTh" type="number" value="2.5" min="0.5" step="0.1">
+      </label>
+
+      <label>DP exit threshold
+        <input id="dpExitTh" type="number" value="1.0" min="0.1" step="0.1">
+      </label>
+
+      <label>DP min phase (ms)
+        <input id="dpMinPhaseMs" type="number" value="200" min="50" step="50">
       </label>
 
       <label>Stable phase window (ms)
         <input id="stablePhaseMs" type="number" value="300" min="100" step="50">
       </label>
+
+      <label>Swallow phase margin before (ms)
+        <input id="swallowPadBeforeMs" type="number" value="100" min="0" step="10">
+      </label>
+
+      <label>Swallow phase margin after (ms)
+        <input id="swallowPadAfterMs" type="number" value="150" min="0" step="10">
+      </label>
     </div>
 
     <div class="legend-note">
-      Stop 후 전체 데이터를 일괄 분석합니다. FSR로 swallow event를 만들고, dp_pa는 0 기준 부호로 I/E/A를 판정합니다.
-      swallow event 구간에서는 dp_pa를 apnea로 처리합니다.
+      Stop 후 전체 데이터를 일괄 분석합니다.  
+      FSR은 로컬 baseline 대비 deviation으로 swallow를 찾고,  
+      DP는 detrend + hysteresis + 최소 지속시간으로 I/E/A를 판정합니다.
     </div>
   </div>
 
@@ -194,7 +96,7 @@
       <h3>Signals</h3>
       <canvas id="chart" height="140"></canvas>
       <div class="legend-note">
-        파란색: dp_pa / 주황색: FSR_raw / Stop 후 분석된 swallow event는 회색 음영으로 표시
+        파란색: dp_pa / 주황색: FSR_raw / 회색 음영: 분석된 swallow event
       </div>
     </div>
 
@@ -212,7 +114,7 @@
         </div>
 
         <div class="metric">
-          <div class="k">FSR threshold</div>
+          <div class="k">FSR threshold (summary)</div>
           <div class="v" id="mFsrThreshold">-</div>
         </div>
 
@@ -223,7 +125,7 @@
       </div>
 
       <div class="small" id="liveExplain">
-        연결 후 Start를 누르면 raw 데이터를 수집합니다. Stop을 누르면 전체 데이터를 분석해 swallow event를 생성합니다.
+        연결 후 Start를 누르면 raw 데이터를 수집합니다. Stop을 누르면 전체 데이터를 분석합니다.
       </div>
     </div>
   </div>
@@ -257,679 +159,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    let port, reader, writer;
-    let running = false;
-
-    // raw rows: { ms, dp, fsr }
-    let rows = [];
-
-    // offline analysis results
-    let phaseTimeline = [];   // [{ms, phase}]
-    let stableSegments = [];  // [{phase, startMs, endMs}]
-    let swallowEvents = [];   // [{...}]
-
-    let lastAnalysisStats = {
-      baseMean: null,
-      baseSd: null,
-      threshold: null
-    };
-
-    // ===== Chart shading plugin =====
-    const swallowShadesPlugin = {
-      id: 'swallowShadesPlugin',
-      beforeDraw(chart) {
-        const { ctx, chartArea, scales } = chart;
-        if (!chartArea || !scales.x || !rows.length || !swallowEvents.length) return;
-
-        const xScale = scales.x;
-        const labels = chart.data.labels;
-        if (!labels.length) return;
-
-        const visibleT = labels.map(v => parseFloat(v));
-        const minT = visibleT[0];
-        const maxT = visibleT[visibleT.length - 1];
-
-        ctx.save();
-
-        swallowEvents.forEach(ev => {
-          const t0 = (ev.onsetMs - rows[0].ms) / 1000;
-          const t1 = (ev.endMs - rows[0].ms) / 1000;
-
-          if (t1 < minT || t0 > maxT) return;
-
-          const x0 = xScale.getPixelForValue(t0.toFixed(2));
-          const x1 = xScale.getPixelForValue(t1.toFixed(2));
-
-          ctx.fillStyle = 'rgba(120,120,120,0.12)';
-          ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
-        });
-
-        ctx.restore();
-      }
-    };
-
-    // ===== DOM =====
-    const statusEl = document.getElementById('status');
-    const btnConnect = document.getElementById('connect');
-    const btnStart = document.getElementById('start');
-    const btnStop = document.getElementById('stop');
-    const btnSave = document.getElementById('save');
-    const btnSaveEvents = document.getElementById('saveEvents');
-    const btnClear = document.getElementById('clear');
-
-    const mSwallowCount = document.getElementById('mSwallowCount');
-    const mCurrentPhase = document.getElementById('mCurrentPhase');
-    const mFsrThreshold = document.getElementById('mFsrThreshold');
-    const mCycleMean = document.getElementById('mCycleMean');
-    const liveExplain = document.getElementById('liveExplain');
-    const eventTableBody = document.getElementById('eventTableBody');
-    const summaryText = document.getElementById('summaryText');
-
-    function getParams() {
-      return {
-        fsrBaseWindow: parseInt(document.getElementById('fsrBaseWindow').value, 10),
-        fsrSdK: parseFloat(document.getElementById('fsrSdK').value),
-        fsrSustain: parseInt(document.getElementById('fsrSustain').value, 10),
-        dpSmoothWindow: parseInt(document.getElementById('dpSmoothWindow').value, 10),
-        dpNeutralBand: parseFloat(document.getElementById('dpNeutralBand').value),
-        stablePhaseMs: parseInt(document.getElementById('stablePhaseMs').value, 10)
-      };
-    }
-
-    // ===== Chart =====
-    const ctx = document.getElementById('chart').getContext('2d');
-
-    const chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: [],
-        datasets: [
-          {
-            label: 'DP_Pa',
-            data: [],
-            borderColor: '#1f77b4',
-            tension: 0.25,
-            pointRadius: 0,
-            yAxisID: 'y'
-          },
-          {
-            label: 'FSR_raw',
-            data: [],
-            borderColor: '#ff7f0e',
-            tension: 0.25,
-            pointRadius: 0,
-            yAxisID: 'y2'
-          }
-        ]
-      },
-      options: {
-        animation: false,
-        responsive: true,
-        interaction: { mode: 'nearest', intersect: false },
-        scales: {
-          x: {
-            title: { display: true, text: 'Time (s)' }
-          },
-          y: {
-            title: { display: true, text: 'DP (Pa)' }
-          },
-          y2: {
-            position: 'right',
-            grid: { drawOnChartArea: false },
-            title: { display: true, text: 'FSR' }
-          }
-        },
-        plugins: {
-          legend: { display: true }
-        }
-      },
-      plugins: [swallowShadesPlugin]
-    });
-
-    function setUI(connected) {
-      btnStart.disabled = !connected;
-      btnStop.disabled = !connected;
-      btnSave.disabled = !connected;
-      btnSaveEvents.disabled = !connected;
-      btnClear.disabled = !connected;
-    }
-
-    async function sendLine(s) {
-      const enc = new TextEncoder();
-      await writer.write(enc.encode(s + "\n"));
-    }
-
-    // ===== Utils =====
-    function mean(arr) {
-      if (!arr.length) return 0;
-      return arr.reduce((a, b) => a + b, 0) / arr.length;
-    }
-
-    function std(arr) {
-      if (arr.length < 2) return 0;
-      const m = mean(arr);
-      const v = arr.reduce((s, x) => s + (x - m) ** 2, 0) / arr.length;
-      return Math.sqrt(v);
-    }
-
-    function movingAverage(data, windowSize) {
-      if (!data.length) return [];
-      const out = new Array(data.length);
-      let sum = 0;
-
-      for (let i = 0; i < data.length; i++) {
-        sum += data[i];
-        if (i >= windowSize) sum -= data[i - windowSize];
-        out[i] = sum / Math.min(i + 1, windowSize);
-      }
-
-      return out;
-    }
-
-    function classifyExpStage(onsetMs, expSeg) {
-      if (!expSeg) return '-';
-
-      const dur = expSeg.endMs - expSeg.startMs;
-      if (dur <= 0) return '-';
-
-      const dt = onsetMs - expSeg.startMs;
-      const ratio = dt / dur;
-
-      if (ratio < 0.33) return 'Early';
-      if (ratio < 0.66) return 'Mid';
-      return 'Late';
-    }
-
-    // ===== Offline analysis =====
-
-    function computeSmoothedDP() {
-      const { dpSmoothWindow } = getParams();
-      const dp = rows.map(r => r.dp);
-      return movingAverage(dp, dpSmoothWindow);
-    }
-
-    function computeSmoothedFSR() {
-      const fsr = rows.map(r => r.fsr);
-      return movingAverage(fsr, 3);
-    }
-
-    function classifyPhaseFromLevel(dpLevel) {
-      const { dpNeutralBand } = getParams();
-
-      if (dpLevel > dpNeutralBand) return 'I';
-      if (dpLevel < -dpNeutralBand) return 'E';
-      return 'A';
-    }
-
-    function detectSwallowEventsOffline(smoothedFSR) {
-      const { fsrBaseWindow, fsrSdK, fsrSustain } = getParams();
-      const events = [];
-
-      if (rows.length < 10) {
-        return {
-          events,
-          baseMean: 0,
-          baseSd: 0,
-          threshold: Infinity
-        };
-      }
-
-      const baseN = Math.min(fsrBaseWindow, smoothedFSR.length);
-      const baseline = smoothedFSR.slice(0, baseN);
-
-      const baseMean = mean(baseline);
-      const baseSd = std(baseline);
-      const threshold = baseMean + fsrSdK * baseSd;
-
-      let inSwallow = false;
-      let aboveCount = 0;
-      let belowCount = 0;
-      let onsetIdx = null;
-
-      for (let i = 0; i < smoothedFSR.length; i++) {
-        const v = smoothedFSR[i];
-
-        if (!inSwallow) {
-          if (v > threshold) {
-            aboveCount++;
-            if (aboveCount >= fsrSustain) {
-              onsetIdx = Math.max(0, i - fsrSustain + 1);
-              inSwallow = true;
-              belowCount = 0;
-            }
-          } else {
-            aboveCount = 0;
-          }
-        } else {
-          if (v <= threshold) {
-            belowCount++;
-            if (belowCount >= fsrSustain) {
-              const endIdx = i;
-              events.push({
-                onsetIdx,
-                endIdx,
-                onsetMs: rows[onsetIdx].ms,
-                endMs: rows[endIdx].ms,
-                durationMs: rows[endIdx].ms - rows[onsetIdx].ms
-              });
-
-              inSwallow = false;
-              aboveCount = 0;
-              belowCount = 0;
-              onsetIdx = null;
-            }
-          } else {
-            belowCount = 0;
-          }
-        }
-      }
-
-      return { events, baseMean, baseSd, threshold };
-    }
-
-    function buildPhaseTimelineOffline(smoothedDP, detectedEvents) {
-      const timeline = [];
-      const segments = [];
-
-      function insideSwallow(ms) {
-        return detectedEvents.some(ev => ms >= ev.onsetMs && ms <= ev.endMs);
-      }
-
-      for (let i = 0; i < rows.length; i++) {
-        const ms = rows[i].ms;
-        const phase = insideSwallow(ms) ? 'A' : classifyPhaseFromLevel(smoothedDP[i]);
-
-        timeline.push({ ms, phase });
-
-        if (phase === 'A') continue;
-
-        const lastSeg = segments[segments.length - 1];
-        if (!lastSeg || lastSeg.phase !== phase) {
-          segments.push({ phase, startMs: ms, endMs: ms });
-        } else {
-          lastSeg.endMs = ms;
-        }
-      }
-
-      return { timeline, segments };
-    }
-
-    function getStablePhaseAroundFromTimeline(timeline, centerMs, side = 'pre') {
-      const { stablePhaseMs } = getParams();
-
-      let start, end;
-      if (side === 'pre') {
-        start = centerMs - stablePhaseMs;
-        end = centerMs;
-      } else {
-        start = centerMs;
-        end = centerMs + stablePhaseMs;
-      }
-
-      const win = timeline.filter(p => p.ms >= start && p.ms <= end && p.phase !== 'A');
-      if (!win.length) return 'Unknown';
-
-      let iCount = 0;
-      let eCount = 0;
-
-      for (const p of win) {
-        if (p.phase === 'I') iCount++;
-        if (p.phase === 'E') eCount++;
-      }
-
-      if (iCount === eCount) {
-        return win[win.length - 1]?.phase ?? 'Unknown';
-      }
-
-      return iCount > eCount ? 'I' : 'E';
-    }
-
-    function getPhaseAtOnsetFromTimeline(timeline, onsetMs) {
-      const pre = timeline
-        .filter(p => p.ms <= onsetMs && p.phase !== 'A')
-        .slice(-5);
-
-      if (!pre.length) return 'Unknown';
-      return pre[pre.length - 1].phase;
-    }
-
-    function getLastExpirationSegmentBeforeFromSegments(segments, ms) {
-      for (let i = segments.length - 1; i >= 0; i--) {
-        const seg = segments[i];
-        if (seg.phase === 'E' && seg.startMs <= ms) return seg;
-      }
-      return null;
-    }
-
-    function getMeanCycleDuration() {
-      const inspirationStarts = stableSegments
-        .filter(s => s.phase === 'I')
-        .map(s => s.startMs);
-
-      if (inspirationStarts.length < 2) return null;
-
-      const cycles = [];
-      for (let i = 1; i < inspirationStarts.length; i++) {
-        cycles.push(inspirationStarts[i] - inspirationStarts[i - 1]);
-      }
-
-      return mean(cycles);
-    }
-
-    function analyzeAllData() {
-      swallowEvents = [];
-      phaseTimeline = [];
-      stableSegments = [];
-      lastAnalysisStats = {
-        baseMean: null,
-        baseSd: null,
-        threshold: null
-      };
-
-      if (!rows.length) return;
-
-      const smoothedDP = computeSmoothedDP();
-      const smoothedFSR = computeSmoothedFSR();
-
-      const detected = detectSwallowEventsOffline(smoothedFSR);
-      const detectedEvents = detected.events || [];
-
-      lastAnalysisStats = {
-        baseMean: detected.baseMean,
-        baseSd: detected.baseSd,
-        threshold: detected.threshold
-      };
-
-      const built = buildPhaseTimelineOffline(smoothedDP, detectedEvents);
-      phaseTimeline = built.timeline;
-      stableSegments = built.segments;
-
-      swallowEvents = detectedEvents.map((ev, idx) => {
-        const prePhase = getStablePhaseAroundFromTimeline(phaseTimeline, ev.onsetMs, 'pre');
-        const postPhase = getStablePhaseAroundFromTimeline(phaseTimeline, ev.endMs, 'post');
-        const onsetPhase = getPhaseAtOnsetFromTimeline(phaseTimeline, ev.onsetMs);
-        const expSeg = getLastExpirationSegmentBeforeFromSegments(stableSegments, ev.onsetMs);
-
-        let expDelta = null;
-        let expStage = '-';
-
-        if (prePhase === 'E' && expSeg) {
-          expDelta = ev.onsetMs - expSeg.startMs;
-          expStage = classifyExpStage(ev.onsetMs, expSeg);
-        }
-
-        return {
-          index: idx + 1,
-          onsetMs: ev.onsetMs,
-          endMs: ev.endMs,
-          durationMs: ev.durationMs,
-          prePhase,
-          postPhase,
-          pattern: `${prePhase}-S-${postPhase}`,
-          onsetRespPhase: onsetPhase,
-          expStartToOnsetMs: expDelta,
-          expStage
-        };
-      });
-
-      mFsrThreshold.textContent = Number.isFinite(detected.threshold)
-        ? detected.threshold.toFixed(1)
-        : '-';
-
-      const lastPhase = phaseTimeline.length ? phaseTimeline[phaseTimeline.length - 1].phase : 'A';
-      mCurrentPhase.textContent =
-        lastPhase === 'I' ? 'Inspiration' :
-        lastPhase === 'E' ? 'Expiration' :
-        'Apnea';
-
-      liveExplain.textContent =
-        `Stop 후 일괄 분석 완료: swallow ${swallowEvents.length}개 검출, baseline=${detected.baseMean.toFixed(1)}, SD=${detected.baseSd.toFixed(1)}`;
-    }
-
-    // ===== Render =====
-
-    function updateSummary() {
-      mSwallowCount.textContent = String(swallowEvents.length);
-      const cycle = getMeanCycleDuration();
-      mCycleMean.textContent = cycle ? `${cycle.toFixed(0)} ms` : '-';
-    }
-
-    function renderEvents() {
-      eventTableBody.innerHTML = swallowEvents.map(ev => `
-        <tr>
-          <td>${ev.index}</td>
-          <td>${ev.onsetMs}</td>
-          <td>${ev.endMs}</td>
-          <td>${ev.durationMs}</td>
-          <td>${ev.prePhase}</td>
-          <td>${ev.postPhase}</td>
-          <td>${ev.pattern}</td>
-          <td>${ev.onsetRespPhase}</td>
-          <td>${ev.expStartToOnsetMs ?? '-'}</td>
-          <td>${ev.expStage}</td>
-        </tr>
-      `).join('');
-    }
-
-    function renderStopSummary() {
-      const { baseMean, baseSd, threshold } = lastAnalysisStats;
-      const meanCycle = getMeanCycleDuration();
-      const durations = swallowEvents.map(ev => ev.durationMs);
-      const meanDuration = durations.length ? mean(durations) : null;
-
-      const patternCounts = {};
-      swallowEvents.forEach(ev => {
-        patternCounts[ev.pattern] = (patternCounts[ev.pattern] || 0) + 1;
-      });
-
-      const patternText = Object.keys(patternCounts).length
-        ? Object.entries(patternCounts).map(([k, v]) => `${k}: ${v}`).join('\n')
-        : '없음';
-
-      const eventText = swallowEvents.length
-        ? swallowEvents.map(ev => [
-            `[Event ${ev.index}]`,
-            `onset: ${ev.onsetMs} ms`,
-            `end: ${ev.endMs} ms`,
-            `duration: ${ev.durationMs} ms`,
-            `pre-phase: ${ev.prePhase}`,
-            `post-phase: ${ev.postPhase}`,
-            `pattern: ${ev.pattern}`,
-            `at onset: ${ev.onsetRespPhase}`,
-            `exp start → onset: ${ev.expStartToOnsetMs ?? '-'} ms`,
-            `exp phase stage: ${ev.expStage}`
-          ].join('\n')).join('\n\n')
-        : '검출된 swallow event 없음';
-
-      summaryText.textContent =
-        `[요약]\n` +
-        `총 데이터 포인트: ${rows.length}\n` +
-        `FSR baseline mean: ${baseMean != null ? baseMean.toFixed(2) : '-'}\n` +
-        `FSR baseline SD: ${baseSd != null ? baseSd.toFixed(2) : '-'}\n` +
-        `FSR threshold: ${Number.isFinite(threshold) ? threshold.toFixed(2) : '-'}\n` +
-        `총 swallow 수: ${swallowEvents.length}\n` +
-        `평균 swallow duration: ${meanDuration ? meanDuration.toFixed(1) + ' ms' : '-'}\n` +
-        `평균 호흡 주기: ${meanCycle ? meanCycle.toFixed(1) + ' ms' : '-'}\n\n` +
-        `[Pattern counts]\n${patternText}\n\n` +
-        `[Event details]\n${eventText}`;
-    }
-
-    // ===== Raw data only while running =====
-    function addPoint(ms, dp, fsr) {
-      rows.push({ ms, dp, fsr });
-
-      const t0 = rows[0].ms;
-      const t = (ms - t0) / 1000.0;
-
-      chart.data.labels.push(t.toFixed(2));
-      chart.data.datasets[0].data.push(dp);
-      chart.data.datasets[1].data.push(fsr);
-
-      const MAX = 2000;
-      if (chart.data.labels.length > MAX) {
-        chart.data.labels.shift();
-        chart.data.datasets[0].data.shift();
-        chart.data.datasets[1].data.shift();
-      }
-
-      chart.update('none');
-    }
-
-    async function readLoop() {
-      const dec = new TextDecoder();
-      let buf = "";
-
-      while (port && port.readable) {
-        try {
-          const { value, done } = await reader.read();
-          if (done) break;
-
-          buf += dec.decode(value, { stream: true });
-          let idx;
-
-          while ((idx = buf.indexOf("\n")) >= 0) {
-            const line = buf.slice(0, idx).trim();
-            buf = buf.slice(idx + 1);
-
-            if (!line) continue;
-            if (line.startsWith("ms,")) continue;
-
-            const parts = line.split(",");
-            if (parts.length === 3) {
-              const ms = parseInt(parts[0], 10);
-              const dp = parseFloat(parts[1]);
-              const fsr = parseInt(parts[2], 10);
-
-              if (!Number.isNaN(ms) && !Number.isNaN(dp) && !Number.isNaN(fsr)) {
-                addPoint(ms, dp, fsr);
-              }
-            }
-          }
-        } catch (e) {
-          console.error(e);
-          statusEl.textContent = "Status: read error";
-          break;
-        }
-      }
-    }
-
-    function resetAll() {
-      rows = [];
-      phaseTimeline = [];
-      stableSegments = [];
-      swallowEvents = [];
-      lastAnalysisStats = {
-        baseMean: null,
-        baseSd: null,
-        threshold: null
-      };
-
-      chart.data.labels = [];
-      chart.data.datasets[0].data = [];
-      chart.data.datasets[1].data = [];
-      chart.update();
-
-      renderEvents();
-      updateSummary();
-
-      mCurrentPhase.textContent = '-';
-      mFsrThreshold.textContent = '-';
-      liveExplain.textContent = '버퍼를 초기화했습니다.';
-      summaryText.textContent = 'Stop을 누르면 요약 결과가 여기에 표시됩니다.';
-    }
-
-    // ===== Buttons =====
-    btnConnect.onclick = async () => {
-      if (!("serial" in navigator)) {
-        alert("Web Serial not supported. Chrome/Edge 사용 권장");
-        return;
-      }
-
-      port = await navigator.serial.requestPort();
-      await port.open({ baudRate: 115200 });
-
-      writer = port.writable.getWriter();
-      reader = port.readable.getReader();
-
-      statusEl.textContent = "Status: connected";
-      setUI(true);
-
-      await sendLine("mode csv");
-      readLoop();
-    };
-
-    btnStart.onclick = async () => {
-      resetAll();
-      await sendLine("start");
-      running = true;
-      statusEl.textContent = "Status: running";
-      liveExplain.textContent = 'raw 데이터 수집 중입니다. Stop을 누르면 전체 분석을 시작합니다.';
-    };
-
-    btnStop.onclick = async () => {
-      await sendLine("stop");
-      running = false;
-      statusEl.textContent = "Status: stopped";
-
-      analyzeAllData();
-      renderEvents();
-      updateSummary();
-      renderStopSummary();
-      chart.update();
-
-      if (!swallowEvents.length) {
-        liveExplain.textContent = 'Stop 후 전체 분석 완료: swallow event를 찾지 못했습니다.';
-      }
-    };
-
-    btnClear.onclick = () => {
-      resetAll();
-    };
-
-    btnSave.onclick = () => {
-      if (!rows.length) return;
-
-      let csv = "ms,dp_pa,fsr_raw\n";
-      csv += rows.map(r => `${r.ms},${r.dp},${r.fsr}`).join("\n");
-
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `breath_raw_${Date.now()}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    };
-
-    btnSaveEvents.onclick = () => {
-      if (!swallowEvents.length) return;
-
-      let csv = [
-        "index,onset_ms,end_ms,duration_ms,pre_phase,post_phase,pattern,onset_resp_phase,exp_start_to_onset_ms,exp_stage"
-      ].join("\n");
-
-      csv += "\n" + swallowEvents.map(ev => [
-        ev.index,
-        ev.onsetMs,
-        ev.endMs,
-        ev.durationMs,
-        ev.prePhase,
-        ev.postPhase,
-        ev.pattern,
-        ev.onsetRespPhase,
-        ev.expStartToOnsetMs ?? "",
-        ev.expStage
-      ].join(",")).join("\n");
-
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `swallow_events_${Date.now()}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    };
-  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <script type="module" src="./js/app.js"></script>
 </body>
 </html>
