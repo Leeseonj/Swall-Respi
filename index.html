@@ -6,8 +6,11 @@
   <title>Breath & Swallow Logger</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
+
 <body>
   <div class="page">
+
+    <!-- HEADER -->
     <header class="page-header">
       <div>
         <h1>Breath & Swallow Logger</h1>
@@ -25,168 +28,199 @@
       </div>
     </header>
 
+    <!-- PARAMETERS -->
     <section class="panel">
       <div class="panel-header">
         <h2>Analysis Parameters</h2>
         <p class="panel-desc">
-          Stop 후 전체 데이터를 일괄 분석합니다.  
-          FSR은 로컬 baseline 대비 deviation으로 swallow를 찾고,  
-          DP는 detrend + hysteresis + 최소 지속시간으로 I/E/A를 판정합니다.
+          삼킴(FSR)과 호흡(DP) 신호를 분석하기 위한 파라미터 설정
         </p>
       </div>
 
       <div class="param-sections">
+
+        <!-- FSR -->
         <div class="param-card">
           <h3>FSR / Swallow</h3>
+
           <div class="param-grid">
+
             <label class="field">
               <span>FSR baseline window (pts)</span>
-              <input id="fsrBaseWindow" type="number" value="120" min="20" step="10">
+              <input id="fsrBaseWindow" type="number" value="120">
+              <small class="help">삼킴 기준선 계산 구간 (클수록 안정)</small>
             </label>
 
             <label class="field">
               <span>FSR sustain points</span>
-              <input id="fsrSustain" type="number" value="2" min="1" step="1">
+              <input id="fsrSustain" type="number" value="2">
+              <small class="help">이 값 이상 유지되어야 삼킴 인정</small>
             </label>
 
             <label class="field">
               <span>FSR min swallow (ms)</span>
-              <input id="fsrMinSwallowMs" type="number" value="120" min="50" step="10">
+              <input id="fsrMinSwallowMs" type="number" value="120">
+              <small class="help">이보다 짧으면 노이즈로 무시</small>
             </label>
 
             <label class="field">
               <span>FSR max swallow (ms)</span>
-              <input id="fsrMaxSwallowMs" type="number" value="1500" min="200" step="50">
+              <input id="fsrMaxSwallowMs" type="number" value="1500">
+              <small class="help">이보다 길면 지속 압력으로 판단</small>
             </label>
 
             <label class="field">
               <span>FSR onset K (MAD)</span>
-              <input id="fsrOnK" type="number" value="4.0" min="1" step="0.5">
+              <input id="fsrOnK" type="number" value="4.0">
+              <small class="help">삼킴 시작 민감도</small>
             </label>
 
             <label class="field">
               <span>FSR offset K (MAD)</span>
-              <input id="fsrOffK" type="number" value="1.5" min="0.5" step="0.5">
+              <input id="fsrOffK" type="number" value="1.5">
+              <small class="help">삼킴 종료 기준</small>
             </label>
 
             <label class="field">
               <span>FSR refractory (ms)</span>
-              <input id="fsrRefractoryMs" type="number" value="500" min="0" step="50">
+              <input id="fsrRefractoryMs" type="number" value="500">
+              <small class="help">연속 삼킴 간 최소 간격</small>
             </label>
+
           </div>
         </div>
 
+        <!-- DP -->
         <div class="param-card">
           <h3>DP / Breathing</h3>
+
           <div class="param-grid">
+
             <label class="field">
               <span>DP smoothing window</span>
-              <input id="dpSmoothWindow" type="number" value="7" min="3" step="2">
+              <input id="dpSmoothWindow" type="number" value="7">
+              <small class="help">신호 부드럽게 필터링</small>
             </label>
 
             <label class="field">
               <span>DP baseline window (pts)</span>
-              <input id="dpBaseWindow" type="number" value="101" min="21" step="10">
+              <input id="dpBaseWindow" type="number" value="101">
+              <small class="help">호흡 기준선 계산 구간</small>
             </label>
 
             <label class="field">
               <span>DP enter threshold</span>
-              <input id="dpEnterTh" type="number" value="2.5" min="0.5" step="0.1">
+              <input id="dpEnterTh" type="number" value="2.5">
+              <small class="help">이 값 이상이면 호흡 시작</small>
             </label>
 
             <label class="field">
               <span>DP exit threshold</span>
-              <input id="dpExitTh" type="number" value="1.0" min="0.1" step="0.1">
+              <input id="dpExitTh" type="number" value="1.0">
+              <small class="help">이 값 이하이면 무호흡</small>
             </label>
 
             <label class="field">
               <span>DP min phase (ms)</span>
-              <input id="dpMinPhaseMs" type="number" value="200" min="50" step="50">
+              <input id="dpMinPhaseMs" type="number" value="200">
+              <small class="help">최소 지속시간</small>
             </label>
 
             <label class="field">
               <span>Stable phase window (ms)</span>
-              <input id="stablePhaseMs" type="number" value="300" min="100" step="50">
+              <input id="stablePhaseMs" type="number" value="300">
+              <small class="help">삼킴 전후 판단 구간</small>
             </label>
 
             <label class="field">
-              <span>Swallow phase margin before (ms)</span>
-              <input id="swallowPadBeforeMs" type="number" value="100" min="0" step="10">
+              <span>Swallow phase margin before</span>
+              <input id="swallowPadBeforeMs" type="number" value="100">
+              <small class="help">삼킴 전 제외 구간</small>
             </label>
 
             <label class="field">
-              <span>Swallow phase margin after (ms)</span>
-              <input id="swallowPadAfterMs" type="number" value="150" min="0" step="10">
+              <span>Swallow phase margin after</span>
+              <input id="swallowPadAfterMs" type="number" value="150">
+              <small class="help">삼킴 후 제외 구간</small>
             </label>
+
           </div>
         </div>
+
       </div>
     </section>
 
+    <!-- MAIN -->
     <section class="main-grid">
+
       <div class="panel">
         <div class="panel-header compact">
           <h2>Signals</h2>
-          <p class="panel-desc">파란색: dp_pa / 주황색: FSR_raw / 회색 음영: 분석된 swallow event</p>
+          <p class="panel-desc">
+            호흡(dp_pa)과 삼킴(FSR) 신호 시각화
+          </p>
         </div>
         <div class="chart-wrap">
           <canvas id="chart"></canvas>
         </div>
       </div>
 
-      <div class="side-stack">
-        <section class="panel">
-          <div class="panel-header compact">
-            <h2>Live Summary</h2>
+      <div class="panel">
+        <div class="panel-header compact">
+          <h2>Live Summary</h2>
+          <p class="panel-desc">현재 상태 요약</p>
+        </div>
+
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-label">Swallow count</div>
+            <div class="metric-value" id="mSwallowCount">0</div>
           </div>
 
-          <div class="metrics">
-            <div class="metric">
-              <div class="metric-label">Swallow count</div>
-              <div class="metric-value" id="mSwallowCount">0</div>
-            </div>
-
-            <div class="metric">
-              <div class="metric-label">Current phase</div>
-              <div class="metric-value" id="mCurrentPhase">-</div>
-            </div>
-
-            <div class="metric">
-              <div class="metric-label">FSR threshold</div>
-              <div class="metric-value" id="mFsrThreshold">-</div>
-            </div>
-
-            <div class="metric">
-              <div class="metric-label">Mean cycle duration</div>
-              <div class="metric-value" id="mCycleMean">-</div>
-            </div>
+          <div class="metric">
+            <div class="metric-label">Current phase</div>
+            <div class="metric-value" id="mCurrentPhase">-</div>
           </div>
 
-          <div id="liveExplain" class="muted-box">
-            연결 후 Start를 누르면 raw 데이터를 수집합니다. Stop을 누르면 전체 데이터를 분석합니다.
+          <div class="metric">
+            <div class="metric-label">FSR threshold</div>
+            <div class="metric-value" id="mFsrThreshold">-</div>
           </div>
-        </section>
+
+          <div class="metric">
+            <div class="metric-label">Mean cycle duration</div>
+            <div class="metric-value" id="mCycleMean">-</div>
+          </div>
+        </div>
+
+        <div id="liveExplain" class="muted-box">
+          Start → 데이터 수집 / Stop → 전체 분석
+        </div>
       </div>
+
     </section>
 
+    <!-- EVENTS -->
     <section class="panel">
       <div class="panel-header compact">
         <h2>Detected Swallow Events</h2>
+        <p class="panel-desc">삼킴 이벤트 상세 정보</p>
       </div>
+
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th>#</th>
-              <th>Onset (ms)</th>
-              <th>End (ms)</th>
-              <th>Duration (ms)</th>
+              <th>Onset</th>
+              <th>End</th>
+              <th>Duration</th>
               <th>Pre</th>
               <th>Post</th>
               <th>Pattern</th>
               <th>At onset</th>
-              <th>Exp start → onset (ms)</th>
-              <th>Exp phase stage</th>
+              <th>Exp start → onset</th>
+              <th>Exp stage</th>
             </tr>
           </thead>
           <tbody id="eventTableBody"></tbody>
@@ -194,12 +228,18 @@
       </div>
     </section>
 
+    <!-- SUMMARY -->
     <section class="panel">
       <div class="panel-header compact">
         <h2>Stop Analysis Summary</h2>
+        <p class="panel-desc">전체 분석 결과</p>
       </div>
-      <div id="summaryText" class="summary-box">Stop을 누르면 요약 결과가 여기에 표시됩니다.</div>
+
+      <div id="summaryText" class="summary-box">
+        Stop을 누르면 표시됩니다.
+      </div>
     </section>
+
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
