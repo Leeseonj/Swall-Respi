@@ -283,3 +283,9 @@ th {
     height: 320px;
   }
 }
+
+.help {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  line-height: 1.3;
+}
